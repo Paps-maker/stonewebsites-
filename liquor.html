@@ -419,6 +419,127 @@
   .table-compact tbody tr > td:first-child { background-color: var(--surface) !important; background-image: none; box-shadow: 1px 0 0 var(--line); }
   .table-compact tbody tr.table-danger > td:first-child { background-image: linear-gradient(var(--danger-bg), var(--danger-bg)) !important; }
 
+  /* Sales ledger: grouped by day, one compact expandable line per sale */
+  .range-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .range-chips .btn.active { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
+
+  .sales-list { display: block; }
+  .sales-day { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; margin-bottom: 14px; background: var(--surface); }
+  .sales-day-head {
+    display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 10px 16px; background: var(--surface-2); border-bottom: 1px solid var(--line);
+  }
+  .day-title { font-weight: 700; }
+  .day-date { font-weight: 500; font-size: .8rem; color: var(--muted); margin-left: 6px; }
+  .day-sum { font-size: .82rem; color: var(--muted); }
+  .day-sum b { color: var(--ic-green); font-size: .95rem; }
+
+  .sale-row { border-bottom: 1px solid var(--line); }
+  .sale-row:last-child { border-bottom: 0; }
+  .sale-row > summary {
+    list-style: none; cursor: pointer; display: grid; align-items: center; column-gap: 12px;
+    grid-template-columns: 64px minmax(110px, 170px) minmax(0, 1fr) 96px 130px 18px;
+    padding: 11px 16px; transition: background-color .12s;
+  }
+  .sale-row > summary::-webkit-details-marker { display: none; }
+  .sale-row > summary:hover { background: var(--row-hover); }
+  .sale-row[open] > summary { background: var(--row-hover); }
+  .sr-time { font-size: .8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .sr-cust { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sr-cust i { font-size: .72rem; color: var(--brand); margin-right: 7px; }
+  .sr-items { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); font-size: .88rem; }
+  .sr-items b { color: var(--muted); font-weight: 600; }
+  .sr-more { font-size: .7rem; background: var(--brand-soft); color: var(--brand); border-radius: 999px; padding: 1px 8px; margin-left: 4px; font-weight: 600; }
+  .sr-total { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .sr-chev { color: var(--muted); font-size: .7rem; text-align: right; transition: transform .18s; }
+  .sale-row[open] .sr-chev { transform: rotate(180deg); }
+
+  .sale-detail { padding: 4px 16px 14px 16px; background: var(--surface-2); border-top: 1px dashed var(--line); }
+  .sale-detail-meta { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: .78rem; color: var(--muted); padding: 10px 0 4px; align-items: center; }
+  .sale-chip { font-size: .7rem; border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; color: var(--muted); }
+  .sale-items { list-style: none; margin: 0; padding: 0; }
+  .sale-items li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px dashed var(--line); font-size: .86rem; }
+  .sale-items li:last-child { border-bottom: 0; }
+  .sale-items li.match { background: rgba(212, 163, 115, .2); border-radius: 8px; padding-left: 8px; padding-right: 8px; }
+  .sale-items .name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .sale-qty { min-width: 40px; text-align: center; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; font-weight: 650; font-size: .78rem; padding: 2px 6px; }
+  .sale-actions { display: flex; gap: 8px; justify-content: flex-end; padding-top: 8px; }
+  .sales-list-footer { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding-top: 2px; }
+
+  @media (max-width: 767.98px) {
+    .sale-row > summary {
+      grid-template-columns: minmax(0, 1fr) auto 16px;
+      grid-template-areas: "cust total chev" "items items items" "time pay pay";
+      row-gap: 3px; padding: 11px 14px;
+    }
+    .sr-cust { grid-area: cust; }
+    .sr-total { grid-area: total; }
+    .sr-chev { grid-area: chev; }
+    .sr-items { grid-area: items; font-size: .82rem; }
+    .sr-time { grid-area: time; font-size: .74rem; }
+    .sr-pay { grid-area: pay; text-align: right; }
+    .sales-day-head { padding: 9px 14px; }
+    .sale-detail { padding: 2px 14px 12px; }
+  }
+
+  /* Charts */
+  .chart-box { position: relative; height: 300px; }
+  @media (max-width: 767.98px) { .chart-box { height: 250px; } }
+
+  /* Day closing */
+  .cd-box { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--surface-2); }
+  .cd-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 9px 14px; border-bottom: 1px dashed var(--line); }
+  .cd-row:last-child { border-bottom: 0; }
+  .cd-row span small, .cd-expected span small { display: block; font-size: .72rem; color: var(--muted); font-weight: 500; }
+  .cd-row strong { font-variant-numeric: tabular-nums; }
+  .cd-total { background: var(--brand-soft); border-top: 1px solid var(--line); }
+  .cd-expected { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; background: var(--nav); color: #fff; }
+  .cd-expected span small { color: rgba(255, 255, 255, .6); }
+  .cd-expected strong { font-size: 1.35rem; color: #f3c27a; }
+  .cd-pill { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: .82rem; font-weight: 600; background: var(--surface-2); color: var(--muted); border: 1px solid var(--line); }
+  .cd-pill.ok { background: var(--pill-ok-bg); color: var(--pill-ok-ink); border-color: transparent; }
+  .cd-pill.bad { background: var(--pill-bad-bg); color: var(--pill-bad-ink); border-color: transparent; }
+  .cd-pill.warn { background: rgba(245, 158, 11, .2); color: #f59e0b; border-color: transparent; }
+  html[data-theme="light"] .cd-pill.warn { color: #b45309; background: #fef3c7; }
+
+  /* What's new */
+  .wn-release + .wn-release { margin-top: 18px; padding-top: 16px; border-top: 1px dashed var(--line); }
+  .wn-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+  .wn-head span { font-size: .76rem; color: var(--muted); }
+  .wn-item { display: flex; gap: 12px; align-items: flex-start; padding: 8px 0; font-size: .9rem; }
+  .wn-ico { width: 30px; height: 30px; border-radius: 9px; background: var(--brand-soft); color: var(--brand); display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: .8rem; }
+  .wn-tag { font-size: .62rem; text-transform: uppercase; letter-spacing: .05em; font-weight: 700; background: var(--brand-soft); color: var(--brand); border-radius: 999px; padding: 1px 8px; margin-left: 4px; vertical-align: middle; }
+
+  /* Sales sub-tabs */
+  .sales-subtabs { display: flex; gap: 8px; flex-wrap: nowrap; overflow-x: auto; margin-bottom: 14px; padding-bottom: 2px; scrollbar-width: none; }
+  .sales-subtabs::-webkit-scrollbar { display: none; }
+  .sales-subtabs .subtab {
+    border: 1px solid var(--line); background: var(--surface); color: var(--muted); border-radius: 999px;
+    padding: .45rem 1rem; font-weight: 600; font-size: .85rem; white-space: nowrap; transition: all .15s;
+  }
+  .sales-subtabs .subtab i { margin-right: 7px; opacity: .85; }
+  .sales-subtabs .subtab:hover { color: var(--ink); border-color: var(--brand); }
+  .sales-subtabs .subtab.active { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
+
+  /* Profit cards */
+  .pc-compare { font-size: .85rem; opacity: .95; }
+  .pc-badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-weight: 700; font-size: .78rem; margin-right: 4px; background: rgba(255, 255, 255, .22); }
+  .pc-badge.down { background: rgba(0, 0, 0, .28); }
+  .pc-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 16px; padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, .25); }
+  .pc-stats span { display: block; font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; opacity: .8; }
+  .pc-stats strong { font-size: .95rem; font-variant-numeric: tabular-nums; }
+
+  .pm-head { display: flex; justify-content: space-between; font-size: .68rem; text-transform: uppercase; letter-spacing: .06em; opacity: .7; padding: 0 2px 6px; }
+  .pm-row { display: flex; align-items: center; gap: 12px; padding: 9px 2px; border-top: 1px solid rgba(255, 255, 255, .18); }
+  .pm-month { flex: 1; min-width: 0; font-weight: 600; }
+  .pm-tag { font-size: .62rem; text-transform: uppercase; letter-spacing: .05em; background: rgba(255, 255, 255, .25); border-radius: 999px; padding: 1px 8px; margin-left: 6px; font-weight: 700; vertical-align: middle; }
+  .pm-nums { text-align: right; line-height: 1.25; }
+  .pm-profit { display: block; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .pm-meta { display: block; font-size: .72rem; opacity: .75; }
+  .pm-del { border: 0; background: rgba(255, 255, 255, .12); color: #fff; width: 30px; height: 30px; border-radius: 8px; opacity: .7; transition: all .15s; flex-shrink: 0; }
+  .pm-del:hover { background: rgba(220, 38, 38, .85); opacity: 1; }
+  @media (max-width: 575.98px) { .pc-stats { grid-template-columns: 1fr 1fr; } .pc-stats > div:last-child { grid-column: 1 / -1; } }
+
   /* Profit cards: never stretch to the taller sibling */
   .profit-card { height: auto; }
   #profitCardBreakdown { max-height: 260px; overflow-y: auto; padding-right: 4px; }
@@ -583,6 +704,7 @@
             <i class="fas fa-bell"></i><span class="btn-label ms-1">Notifications</span>
             <span id="notifBadge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none">0</span>
           </button>
+          <button type="button" class="theme-toggle" onclick="window.showWhatsNew(true)" title="What's new" aria-label="What's new"><i class="fas fa-wand-magic-sparkles"></i></button>
           <button type="button" class="theme-toggle" onclick="window.toggleTheme()" title="Toggle light / dark mode" aria-label="Toggle theme"><i class="fas fa-sun theme-icon"></i></button>
           <span id="roleBadge" class="badge">ADMIN</span>
           <button id="logoutBtn" class="btn btn-top"><i class="fas fa-right-from-bracket"></i><span class="btn-label ms-1">Logout</span></button>
@@ -682,6 +804,7 @@
         <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#customersTab"><i class="fas fa-address-book"></i>Customers</button></li>
         <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#posTab"><i class="fas fa-cash-register"></i>POS</button></li>
         <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#salesTab"><i class="fas fa-chart-line"></i>Sales</button></li>
+        <li class="nav-item admin-only d-none"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#insightsTab"><i class="fas fa-chart-pie"></i>Insights</button></li>
         <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#attendanceTab"><i class="fas fa-user-clock"></i>Clock In &amp; Out</button></li>
         <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#inflowLogsTab"><i class="fas fa-truck-ramp-box"></i>Restock Logs</button></li>
         <li class="nav-item admin-only d-none"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#requisitionTab"><i class="fas fa-clipboard-list"></i>Requisition</button></li>
@@ -749,6 +872,7 @@
             <h5 class="section-title">Point of Sale</h5>
             <p class="section-sub">Search a product, set the quantity and add it to the cart.</p>
           </div>
+          <button class="btn btn-soft" onclick="window.openCloseDayModal()"><i class="fas fa-calendar-check me-1 text-success"></i>Close Day</button>
         </div>
 
         <div class="row g-3">
@@ -810,32 +934,17 @@
             <h5 class="section-title">Sales Reporting</h5>
             <p class="section-sub">Review transactions, profits and daily summaries.</p>
           </div>
+          <button class="btn btn-custom" onclick="window.openCloseDayModal()"><i class="fas fa-calendar-check me-1"></i>Close Day</button>
         </div>
 
-        <div class="row g-3 admin-only d-none mb-3 align-items-start">
-          <div class="col-md-6">
-            <div class="card profit-card green">
-              <div class="d-flex justify-content-between align-items-start">
-                <div>
-                  <h6 class="text-uppercase mb-1">Daily Profit</h6>
-                  <h3 id="dailyProfit" class="fw-bold mb-0">KSh 0</h3>
-                </div>
-                <i class="fas fa-arrow-trend-up fs-3 opacity-50"></i>
-              </div>
-              <div class="small opacity-75 mt-2">Profit made from today's sales</div>
-            </div>
-          </div>
-          <div class="col-md-6">
-            <div class="card profit-card blue">
-              <h6 class="text-uppercase mb-1">Total Net Profit</h6>
-              <h3 id="totalProfit" class="fw-bold mb-3">KSh 0</h3>
-              <hr class="border-white opacity-25 my-2">
-              <div id="profitCardBreakdown" class="small"></div>
-            </div>
-          </div>
+        <div class="nav sales-subtabs" id="salesSubTabs" role="tablist">
+          <button class="subtab active" role="tab" data-bs-toggle="tab" data-bs-target="#salesSubTx"><i class="fas fa-receipt"></i>Sales</button>
+          <button class="subtab" role="tab" data-bs-toggle="tab" data-bs-target="#salesSubDaily"><i class="fas fa-calendar-day"></i>Daily Products Sold</button>
+          <button class="subtab admin-only d-none" role="tab" data-bs-toggle="tab" data-bs-target="#salesSubProfit"><i class="fas fa-sack-dollar"></i>Profit</button>
+          <button class="subtab admin-only d-none" role="tab" data-bs-toggle="tab" data-bs-target="#salesSubClosings"><i class="fas fa-calendar-check"></i>Closing Day</button>
         </div>
 
-        <div class="card panel mb-3">
+        <div class="card panel mb-3" id="salesFilters">
           <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <h6 class="mb-0 fw-bold"><i class="fas fa-receipt me-2 text-muted"></i>Sales History &amp; Search</h6>
             <div class="d-flex gap-2 align-items-center flex-wrap">
@@ -846,6 +955,14 @@
             </div>
           </div>
 
+          <div id="salesRangeChips" class="range-chips mb-3">
+            <button class="btn btn-soft btn-sm" data-range="today" onclick="window.setSalesRange('today')">Today</button>
+            <button class="btn btn-soft btn-sm" data-range="yesterday" onclick="window.setSalesRange('yesterday')">Yesterday</button>
+            <button class="btn btn-soft btn-sm" data-range="week" onclick="window.setSalesRange('week')">Last 7 days</button>
+            <button class="btn btn-soft btn-sm" data-range="month" onclick="window.setSalesRange('month')">This month</button>
+            <button class="btn btn-soft btn-sm active" data-range="all" onclick="window.setSalesRange('all')">All</button>
+          </div>
+
           <div class="input-group mb-3">
             <span class="input-group-text"><i class="fas fa-search"></i></span>
             <input type="text" id="salesSearchInput" class="form-control" placeholder="Search by product, customer, or receipt code...">
@@ -854,27 +971,132 @@
 
           <div id="salesSearchSummary" class="alert alert-info py-2 px-3 mb-3 d-none"></div>
 
-          <div class="table-wrap">
-            <div class="table-responsive">
-              <table class="table table-hover align-middle">
-                <thead>
-                  <tr>
-                    <th style="min-width: 140px;">Date &amp; Time</th>
-                    <th style="min-width: 120px;">Customer</th>
-                    <th style="min-width: 320px;">Items &amp; Quantities Sold</th>
-                    <th style="min-width: 130px;">Total</th>
-                    <th style="min-width: 140px;" class="text-end">Actions</th>
-                  </tr>
-                </thead>
-                <tbody id="salesTable"></tbody>
-              </table>
+        </div>
+
+        <div class="tab-content" id="salesSubContent">
+          <div class="tab-pane fade show active" id="salesSubTx">
+            <div id="salesTable" class="sales-list"></div>
+          </div>
+          <div class="tab-pane fade" id="salesSubDaily">
+            <div class="card panel">
+              <h6 class="fw-bold mb-3"><i class="fas fa-calendar-day me-2 text-muted"></i>Daily Product Sales Summary</h6>
+              <div id="dailySalesContainer"></div>
+            </div>
+          </div>
+          <div class="tab-pane fade" id="salesSubProfit">
+            <div class="row g-3 admin-only d-none mb-3 align-items-start">
+              <div class="col-md-6">
+                <div class="card profit-card green">
+                  <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                      <h6 class="text-uppercase mb-1">Daily Profit</h6>
+                      <h3 id="dailyProfit" class="fw-bold mb-0">KSh 0</h3>
+                    </div>
+                    <i class="fas fa-arrow-trend-up fs-3 opacity-50"></i>
+                  </div>
+                  <div id="dailyProfitCompare" class="pc-compare mt-2">—</div>
+                  <div class="pc-stats">
+                    <div><span>Today's sales</span><strong id="dailyRevenue">KSh 0.00</strong></div>
+                    <div><span>Orders</span><strong id="dailyOrders">0</strong></div>
+                    <div><span>Yesterday's profit</span><strong id="yesterdayProfit">KSh 0.00</strong></div>
+                  </div>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="card profit-card blue">
+                  <h6 class="text-uppercase mb-1">Total Net Profit</h6>
+                  <h3 id="totalProfit" class="fw-bold mb-1">KSh 0</h3>
+                  <div id="totalProfitMeta" class="small opacity-75 mb-3"></div>
+                  <hr class="border-white opacity-25 my-2">
+                  <div id="profitCardBreakdown" class="small"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="tab-pane fade" id="salesSubClosings">
+            <div class="card panel admin-only d-none">
+              <h6 class="fw-bold mb-1"><i class="fas fa-calendar-check me-2 text-muted"></i>Day Closings</h6>
+              <p class="section-sub mb-3">Cash counted at the end of each day compared with what the system expected.</p>
+              <div class="table-wrap">
+                <div class="table-responsive">
+                  <table class="table table-hover align-middle table-compact">
+                    <thead>
+                      <tr>
+                        <th>Day</th><th>Closed by</th><th class="text-end">Total sales</th>
+                        <th class="text-end">Expected cash</th><th class="text-end">Counted</th>
+                        <th class="text-end">Result</th><th class="text-center">Note</th><th></th>
+                      </tr>
+                    </thead>
+                    <tbody id="dayClosingsBody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= INSIGHTS ================= -->
+      <div class="tab-pane fade" id="insightsTab">
+        <div class="section-head">
+          <div>
+            <h5 class="section-title">Insights</h5>
+            <p class="section-sub">Trends, best sellers and monthly profit at a glance.</p>
+          </div>
+          <div id="insightsRangeChips" class="range-chips">
+            <button class="btn btn-soft btn-sm" data-range="7" onclick="window.setInsightsRange(7)">7 days</button>
+            <button class="btn btn-soft btn-sm active" data-range="30" onclick="window.setInsightsRange(30)">30 days</button>
+            <button class="btn btn-soft btn-sm" data-range="90" onclick="window.setInsightsRange(90)">90 days</button>
+          </div>
+        </div>
+
+        <div class="row g-3 mb-3">
+          <div class="col-6 col-lg-3"><div class="card stat-card"><span class="stat-icon ic-green mb-2"><i class="fas fa-coins"></i></span><div class="stat-label">Sales</div><div id="kpiRevenue" class="stat-value">KSh 0</div></div></div>
+          <div class="col-6 col-lg-3"><div class="card stat-card"><span class="stat-icon ic-blue mb-2"><i class="fas fa-receipt"></i></span><div class="stat-label">Orders</div><div id="kpiOrders" class="stat-value">0</div></div></div>
+          <div class="col-6 col-lg-3"><div class="card stat-card"><span class="stat-icon ic-violet mb-2"><i class="fas fa-scale-balanced"></i></span><div class="stat-label">Avg. order</div><div id="kpiAvg" class="stat-value">KSh 0</div></div></div>
+          <div class="col-6 col-lg-3"><div class="card stat-card"><span class="stat-icon ic-amber mb-2"><i class="fas fa-wine-bottle"></i></span><div class="stat-label">Units sold</div><div id="kpiUnits" class="stat-value">0</div></div></div>
+          <div class="col-12 admin-only d-none"><div class="card stat-card d-flex flex-row align-items-center gap-3"><span class="stat-icon ic-green"><i class="fas fa-arrow-trend-up"></i></span><div><div class="stat-label">Profit in this period</div><div id="kpiProfit" class="stat-value">KSh 0</div></div></div></div>
+        </div>
+
+        <div class="row g-3 mb-3">
+          <div class="col-lg-7">
+            <div class="card panel h-100">
+              <h6 id="trendTitle" class="fw-bold mb-3">Sales trend</h6>
+              <div class="chart-box"><canvas id="salesTrendChart"></canvas></div>
+            </div>
+          </div>
+          <div class="col-lg-5">
+            <div class="card panel h-100">
+              <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                <h6 class="fw-bold mb-0">Top 10 sellers</h6>
+                <div id="topSellersMode" class="range-chips">
+                  <button class="btn btn-soft btn-sm active" data-mode="revenue" onclick="window.setTopSellersMode('revenue')">By sales</button>
+                  <button class="btn btn-soft btn-sm" data-mode="qty" onclick="window.setTopSellersMode('qty')">By units</button>
+                </div>
+              </div>
+              <div class="chart-box"><canvas id="topSellersChart"></canvas></div>
             </div>
           </div>
         </div>
 
-        <div class="card panel">
-          <h6 class="fw-bold mb-3"><i class="fas fa-calendar-day me-2 text-muted"></i>Daily Product Sales Summary</h6>
-          <div id="dailySalesContainer"></div>
+        <div class="card panel admin-only d-none">
+          <h6 class="fw-bold mb-1"><i class="fas fa-file-invoice-dollar me-2 text-muted"></i>Profit &amp; Loss by Month</h6>
+          <p class="section-sub mb-3">Gross profit = sales minus the cost of the goods sold. Rent, salaries and other expenses are not included.</p>
+          <div class="chart-box mb-3"><canvas id="plChart"></canvas></div>
+          <div class="table-wrap">
+            <div class="table-responsive">
+              <table class="table align-middle table-compact">
+                <thead>
+                  <tr>
+                    <th>Month</th><th class="text-end">Orders</th><th class="text-end">Sales</th>
+                    <th class="text-end">Cost of goods</th><th class="text-end">Gross profit</th><th class="text-end">Margin</th>
+                  </tr>
+                </thead>
+                <tbody id="plTableBody"></tbody>
+                <tfoot id="plTableFoot"></tfoot>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1246,6 +1468,72 @@
   </div>
 </div>
 
+<!-- What's new -->
+<div class="modal fade" id="whatsNewModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><span class="m-ico"><i class="fas fa-wand-magic-sparkles"></i></span>What's new</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="whatsNewBody"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-custom" data-bs-dismiss="modal">Got it</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Close Day -->
+<div class="modal fade" id="closeDayModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><span class="m-ico ic-green"><i class="fas fa-calendar-check"></i></span>Close Day</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-3 mb-3">
+          <div class="col-6">
+            <label class="form-label" for="closeDayDate">Day</label>
+            <input type="date" id="closeDayDate" class="form-control">
+          </div>
+          <div class="col-6">
+            <label class="form-label" for="closeDayFloat">Opening float <span class="text-muted fw-normal">(KSh)</span></label>
+            <input type="number" step="any" min="0" id="closeDayFloat" class="form-control" placeholder="0">
+          </div>
+        </div>
+
+        <div id="closeDayExisting" class="alert alert-warning py-2 px-3 small d-none"></div>
+
+        <div class="cd-box mb-3 admin-only d-none" id="closeDayBreakdown"></div>
+
+        <div id="closeDayStaffHint" class="alert alert-info py-2 px-3 small d-none"><i class="fas fa-hand-holding-dollar me-1"></i>Count all the cash in the till, including the opening float, and enter the total below.</div>
+
+        <div class="cd-expected mb-3 admin-only d-none">
+          <span>Expected cash in till<small>opening float + cash sales</small></span>
+          <strong id="closeDayExpected">KSh 0.00</strong>
+        </div>
+
+        <div class="mb-2">
+          <label class="form-label" for="closeDayCounted">Cash actually counted (KSh)</label>
+          <input type="number" step="any" min="0" id="closeDayCounted" class="form-control form-control-lg" placeholder="0.00">
+        </div>
+        <div id="closeDayDiff" class="mb-3 admin-only d-none"></div>
+
+        <div>
+          <label class="form-label" for="closeDayNotes">Notes <span class="text-muted fw-normal">(optional)</span></label>
+          <input type="text" id="closeDayNotes" class="form-control" placeholder="e.g. Paid supplier KSh 500 from till">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-soft" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-custom" onclick="window.saveDayClosing()"><i class="fas fa-lock me-1"></i>Close Day</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Checkout / Payment -->
 <div class="modal fade" id="paymentModal" tabindex="-1" data-bs-backdrop="static">
   <div class="modal-dialog modal-dialog-centered">
@@ -1424,11 +1712,23 @@
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
 
-<script src="main.js"></script>
+<script src="main.js?v=20261033"></script>
+<script>
+  // If a stale cached main.js was loaded (new buttons need its functions), reload once bypassing the cache
+  if (typeof window.openAddProductModal !== 'function') {
+    try {
+      if (!sessionStorage.getItem('madollar_stale_reload')) {
+        sessionStorage.setItem('madollar_stale_reload', '1');
+        location.reload();
+      }
+    } catch (e) {}
+  }
+</script>
 </body>
 </html>

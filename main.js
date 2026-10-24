@@ -14,6 +14,7 @@
    SECTION 10 : SALES ANALYTICS, DYNAMIC TARGETS & PDF REPORTING
    SECTION 11 : STOCK REQUISITION SYSTEM
    SECTION 12 : ADMIN STAFF MANAGEMENT MODULE
+   SECTION 12B: INSIGHTS (CHARTS), PROFIT & LOSS AND DAY CLOSING
    SECTION 13 : UI NAVIGATION & SCROLL HELPERS
    ========================================================================== */
 
@@ -146,6 +147,10 @@ function showDashboard() {
         setTimeout(() => {
             window.checkAndShowUnreadNotificationPopup();
         }, 800);
+    }
+
+    if (typeof window.showWhatsNewWhenReady === "function") {
+        setTimeout(() => window.showWhatsNewWhenReady(), 2200);
     }
 }
 
@@ -409,6 +414,9 @@ function updateUIByRole(role) {
     if (typeof window.refreshRestockLogTables === "function") {
         window.refreshRestockLogTables();
     }
+    // Re-render insights (profit is admin-only) and the day closing history
+    if (typeof window.renderInsights === "function") window.renderInsights();
+    if (typeof window.renderDayClosings === "function") window.renderDayClosings();
 }
 
 /**
@@ -2616,6 +2624,14 @@ window.filterSalesTable = () => {
     const tableBody = document.getElementById("salesTable");
     if (!tableBody) return;
 
+    // Skip the heavy render until the Sales tab is actually opened
+    const salesPane = document.getElementById("salesTab");
+    if (salesPane && !salesPane.classList.contains("active")) {
+        window.salesNeedsRender = true;
+        return;
+    }
+    window.salesNeedsRender = false;
+
     const query = searchInput ? searchInput.value.trim().toLowerCase() : "";
     const fromDateStr = dateFromEl ? dateFromEl.value : "";
     const toDateStr = dateToEl ? dateToEl.value : "";
@@ -2679,117 +2695,151 @@ window.filterSalesTable = () => {
     }
 
     if (filtered.length === 0) {
-        tableBody.innerHTML = `<tr><td colspan="5" class="text-center text-muted py-4">No matching sales records found.</td></tr>`;
+        tableBody.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><i class="fas fa-receipt"></i>No matching sales records found.</div>`;
         renderGroupedSales(filtered, query);
         return;
     }
 
-    let rowsHTML = "";
+    const limit = window.salesLimit || 25;
+    const visible = filtered.slice(0, limit);
+    const admin = isAdmin();
+    const money = (n) => (parseFloat(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+    // Day totals are computed over ALL filtered sales so partially shown days still show the real total
+    const dayTotals = {};
     filtered.forEach(s => {
-        const saleDate = s.date.toDate();
-        const dateStr = saleDate.toLocaleDateString('en-GB');
-        const timeStr = saleDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-        const itemsMiniTable = `
-            <div class="pe-1" style="max-height: 220px; overflow-y: auto;">
-                <table class="table table-sm table-borderless table-hover align-middle mb-0" style="font-size: 0.84rem; background: transparent;">
-                    <tbody>
-                        ${s.items.map((i, idx) => {
-            const isMatch = query && i.name.toLowerCase().includes(query);
-            const qtyVal = parseFloat(i.qty) || 0;
-            const isFraction = (qtyVal % 1 !== 0);
-            const formattedQty = window.toMixedFraction(qtyVal);
-            const priceVal = parseFloat(i.price) || 0;
-            const subtotal = priceVal * qtyVal;
-
-            return `
-                                <tr class="${isMatch ? 'table-warning rounded fw-bold' : ''}">
-                                    <td style="width: 85px;" class="ps-0 py-1">
-                                        <span class="badge ${isFraction ? 'bg-primary-subtle text-primary border border-primary-subtle' : 'bg-light text-dark border'} font-monospace px-2 py-1">
-                                            x ${formattedQty}
-                                        </span>
-                                    </td>
-                                    <td class="fw-semibold text-dark py-1">
-                                        ${i.name}
-                                    </td>
-                                    <td class="text-nowrap text-muted text-end py-1" style="width: 130px;">
-                                        <small class="text-secondary opacity-75">@ ${priceVal.toLocaleString()}</small>
-                                        <strong class="text-dark ms-1">KSh ${subtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
-                                    </td>
-                                    ${isAdmin() ? `
-                                        <td style="width: 25px;" class="text-end pe-0 py-1">
-                                            <button class="btn btn-link text-danger p-0 border-0 ms-1 opacity-75 hover-opacity-100" 
-                                                    title="Delete item from this sale" 
-                                                    onclick="window.deleteItemFromSale('${s.id}', ${idx})">
-                                                <i class="fas fa-times-circle text-danger"></i>
-                                            </button>
-                                        </td>
-                                    ` : ''}
-                                </tr>
-                            `;
-        }).join('')}
-                    </tbody>
-                </table>
-            </div>
-        `;
-
-        const adminDeleteBtn = isAdmin()
-            ? `<button class="btn btn-sm btn-outline-danger" title="Delete Sale Transaction" onclick="window.deleteSale('${s.id}')">
-                <i class="fas fa-trash-alt me-1"></i>Delete
-               </button>`
-            : '';
-
-        const totalQty = s.items.reduce((sum, item) => sum + (parseFloat(item.qty) || 0), 0);
-
-        rowsHTML += `
-            <tr>
-                <td style="vertical-align: top;" class="py-3">
-                    <div class="fw-bold text-dark text-nowrap" style="font-size: 0.88rem;">
-                        <i class="far fa-calendar-alt text-primary me-1"></i>${dateStr}
-                    </div>
-                    <div class="text-muted text-nowrap" style="font-size: 0.78rem;">
-                        <i class="far fa-clock me-1 text-secondary"></i>${timeStr}
-                    </div>
-                    ${s.transaction ? `<div class="mt-1"><span class="badge bg-light text-secondary border font-monospace" style="font-size: 0.68rem;">${s.transaction}</span></div>` : ''}
-                </td>
-                <td style="vertical-align: top;" class="py-3">
-                    <div class="d-flex align-items-center">
-                        <div class="avatar-sm bg-light text-primary rounded-circle d-flex align-items-center justify-content-center me-2" style="width:26px; height:26px; font-size:0.75rem; flex-shrink:0;">
-                            <i class="fas fa-user"></i>
-                        </div>
-                        <span class="fw-medium text-dark text-nowrap" style="font-size: 0.88rem;">${s.customer || 'Guest'}</span>
-                    </div>
-                </td>
-                <td style="vertical-align: top;" class="py-3">
-                    ${itemsMiniTable}
-                </td>
-                <td style="vertical-align: top;" class="py-3">
-                    <div class="text-start">
-                        <div class="fw-bold text-success text-nowrap" style="font-size: 1rem;">
-                            KSh ${parseFloat(s.total).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </div>
-                        <small class="text-muted d-block text-nowrap" style="font-size: 0.75rem;">
-                            ${s.items.length} product${s.items.length > 1 ? 's' : ''} (${window.toMixedFraction(totalQty)} units)
-                        </small>
-                    </div>
-                </td>
-                <td style="vertical-align: top;" class="text-end py-3">
-                    <div class="d-flex justify-content-end gap-1 flex-nowrap">
-                        <button class="btn btn-sm btn-outline-primary" title="Download PDF Receipt" onclick="window.downloadSale('${s.id}')">
-                            <i class="fas fa-file-pdf me-1"></i>PDF
-                        </button>
-                        ${adminDeleteBtn}
-                    </div>
-                </td>
-            </tr>
-        `;
+        const key = s.date.toDate().toDateString();
+        if (!dayTotals[key]) dayTotals[key] = { count: 0, total: 0 };
+        dayTotals[key].count += 1;
+        dayTotals[key].total += parseFloat(s.total) || 0;
     });
 
-    tableBody.innerHTML = rowsHTML;
+    const todayKey = new Date().toDateString();
+    const yest = new Date(); yest.setDate(yest.getDate() - 1);
+    const yesterdayKey = yest.toDateString();
+
+    const dayLabel = (d) => {
+        const key = d.toDateString();
+        const full = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+        if (key === todayKey) return `Today <span class="day-date">${full}</span>`;
+        if (key === yesterdayKey) return `Yesterday <span class="day-date">${full}</span>`;
+        return full;
+    };
+
+    const rowHTML = (s) => {
+        const saleDate = s.date.toDate();
+        const timeStr = saleDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const totalQty = s.items.reduce((sum, item) => sum + (parseFloat(item.qty) || 0), 0);
+
+        // Summary line: show the searched item first if there is one
+        const lead = (query && s.items.find(i => i.name.toLowerCase().includes(query))) || s.items[0];
+        const more = s.items.length - 1;
+
+        const itemsHTML = s.items.map((i, idx) => {
+            const isMatch = query && i.name.toLowerCase().includes(query);
+            const qtyVal = parseFloat(i.qty) || 0;
+            const subtotal = (parseFloat(i.price) || 0) * qtyVal;
+            return `
+                <li class="${isMatch ? 'match' : ''}">
+                    <span class="sale-qty">${window.toMixedFraction(qtyVal)}</span>
+                    <span class="name">${i.name}<small class="text-muted d-block">@ KSh ${(parseFloat(i.price) || 0).toLocaleString()}</small></span>
+                    <strong>KSh ${money(subtotal)}</strong>
+                    ${admin ? `<button class="btn btn-link p-0 border-0" title="Remove this item" onclick="window.deleteItemFromSale('${s.id}', ${idx})"><i class="fas fa-circle-xmark text-danger"></i></button>` : ''}
+                </li>`;
+        }).join('');
+
+        return `
+            <details class="sale-row">
+                <summary>
+                    <span class="sr-time">${timeStr}</span>
+                    <span class="sr-cust"><i class="fas fa-user"></i>${s.customer || 'Guest'}</span>
+                    <span class="sr-items">${lead.name} <b>× ${window.toMixedFraction(lead.qty)}</b>${more > 0 ? ` <span class="sr-more">+${more} more</span>` : ''}</span>
+                    <span class="sr-pay">${s.payment ? `<span class="sale-chip">${s.payment}</span>` : ''}</span>
+                    <span class="sr-total">KSh ${money(s.total)}</span>
+                    <span class="sr-chev"><i class="fas fa-chevron-down"></i></span>
+                </summary>
+                <div class="sale-detail">
+                    <div class="sale-detail-meta">
+                        <span><i class="far fa-clock me-1"></i>${saleDate.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</span>
+                        <span>${s.items.length} item${s.items.length > 1 ? 's' : ''} · ${window.toMixedFraction(totalQty)} units</span>
+                        ${s.transaction ? `<span class="sale-chip font-monospace">${s.transaction}</span>` : ''}
+                    </div>
+                    <ul class="sale-items">${itemsHTML}</ul>
+                    <div class="sale-actions">
+                        <button class="btn btn-soft btn-sm" onclick="window.downloadSale('${s.id}')"><i class="fas fa-file-pdf text-danger me-1"></i>Receipt</button>
+                        ${admin ? `<button class="btn btn-soft btn-sm" onclick="window.deleteSale('${s.id}')"><i class="fas fa-trash-can text-danger me-1"></i>Delete</button>` : ''}
+                    </div>
+                </div>
+            </details>`;
+    };
+
+    // Group the visible sales under day headers (they are already newest first)
+    let cardsHTML = "";
+    let currentKey = null;
+    visible.forEach(s => {
+        const d = s.date.toDate();
+        const key = d.toDateString();
+        if (key !== currentKey) {
+            if (currentKey !== null) cardsHTML += `</div></section>`;
+            const t = dayTotals[key];
+            cardsHTML += `
+                <section class="sales-day">
+                    <header class="sales-day-head">
+                        <span class="day-title">${dayLabel(d)}</span>
+                        <span class="day-sum"><b>KSh ${money(t.total)}</b> · ${t.count} sale${t.count > 1 ? 's' : ''}</span>
+                    </header>
+                    <div class="sales-day-body">`;
+            currentKey = key;
+        }
+        cardsHTML += rowHTML(s);
+    });
+    if (currentKey !== null) cardsHTML += `</div></section>`;
+
+    const remaining = filtered.length - visible.length;
+    const footerHTML = `
+        <div class="sales-list-footer">
+            <span class="text-muted small">Showing ${visible.length} of ${filtered.length} sales</span>
+            ${remaining > 0 ? `<button class="btn btn-custom btn-sm" onclick="window.showMoreSales()">Show ${Math.min(25, remaining)} more</button>` : ''}
+        </div>`;
+
+    tableBody.innerHTML = cardsHTML + footerHTML;
 
     // Synchronize Daily Product Sales Summary list to match search query across all dates sold
     renderGroupedSales(filtered, query);
+};
+
+window.showMoreSales = () => {
+    window.salesLimit = (window.salesLimit || 25) + 25;
+    window.filterSalesTable();
+};
+
+window.showMoreDays = () => {
+    window.dailyLimit = (window.dailyLimit || 7) + 7;
+    window.filterSalesTable();
+};
+
+/**
+ * Quick date-range chips for the sales list
+ */
+window.setSalesRange = (range) => {
+    const ymd = (d) => d.toLocaleDateString('en-CA');
+    const now = new Date();
+    let from = "", to = "";
+
+    if (range === "today") { from = to = ymd(now); }
+    else if (range === "yesterday") { const y = new Date(now); y.setDate(y.getDate() - 1); from = to = ymd(y); }
+    else if (range === "week") { const w = new Date(now); w.setDate(w.getDate() - 6); from = ymd(w); to = ymd(now); }
+    else if (range === "month") { from = ymd(new Date(now.getFullYear(), now.getMonth(), 1)); to = ymd(now); }
+
+    const f = document.getElementById("dateFrom");
+    const t = document.getElementById("dateTo");
+    if (f) f.value = from;
+    if (t) t.value = to;
+
+    document.querySelectorAll("#salesRangeChips .btn").forEach(b => b.classList.toggle("active", b.dataset.range === range));
+    window.salesLimit = 25;
+    window.dailyLimit = 7;
+    window.filterSalesTable();
 };
 
 // Sales Snapshot Listener
@@ -2799,6 +2849,8 @@ window.db.collection("sales").orderBy("date", "desc").onSnapshot(snap => {
     let yesterdayTotal = 0;
     let monthlyTotal = 0;
     let dailyProfit = 0;
+    let yesterdayProfit = 0;
+    let todayOrders = 0;
     let totalProfit = 0;
 
     const monthlyProfits = {};
@@ -2845,8 +2897,8 @@ window.db.collection("sales").orderBy("date", "desc").onSnapshot(snap => {
         monthlyProfits[monthKey].profit += profit;
 
         const sDateStr = saleDate.toDateString();
-        if (sDateStr === today) { todayTotal += parseFloat(s.total); dailyProfit += profit; }
-        if (sDateStr === yesterdayDateStr) { yesterdayTotal += parseFloat(s.total); }
+        if (sDateStr === today) { todayTotal += parseFloat(s.total); dailyProfit += profit; todayOrders++; }
+        if (sDateStr === yesterdayDateStr) { yesterdayTotal += parseFloat(s.total); yesterdayProfit += profit; }
         if (saleDate.getMonth() === currentMonth && saleDate.getFullYear() === currentYear) { monthlyTotal += parseFloat(s.total); }
     });
 
@@ -2868,8 +2920,27 @@ window.db.collection("sales").orderBy("date", "desc").onSnapshot(snap => {
     if (tSales) tSales.textContent = "KSh " + todayTotal.toLocaleString();
     if (ySales) ySales.textContent = "KSh " + yesterdayTotal.toLocaleString();
     if (mSales) mSales.textContent = "KSh " + monthlyTotal.toLocaleString();
-    if (dProfit) dProfit.textContent = "KSh " + dailyProfit.toLocaleString();
-    if (tProfit) tProfit.textContent = "KSh " + totalProfit.toLocaleString();
+    if (dProfit) dProfit.textContent = "KSh " + dailyProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    if (tProfit) tProfit.textContent = "KSh " + totalProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    const money2 = (n) => "KSh " + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const setTxt = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    setTxt("dailyRevenue", money2(todayTotal));
+    setTxt("dailyOrders", todayOrders.toLocaleString());
+    setTxt("yesterdayProfit", money2(yesterdayProfit));
+
+    const cmpEl = document.getElementById("dailyProfitCompare");
+    if (cmpEl) {
+        if (yesterdayProfit > 0) {
+            const pct = ((dailyProfit - yesterdayProfit) / yesterdayProfit) * 100;
+            const up = pct >= 0;
+            cmpEl.innerHTML = `<span class="pc-badge ${up ? 'up' : 'down'}"><i class="fas fa-arrow-${up ? 'up' : 'down'}"></i> ${Math.abs(pct).toFixed(1)}%</span> vs yesterday`;
+        } else if (dailyProfit > 0) {
+            cmpEl.innerHTML = `<span class="pc-badge up"><i class="fas fa-arrow-up"></i> New</span> no profit recorded yesterday`;
+        } else {
+            cmpEl.textContent = "No profit recorded yet today";
+        }
+    }
 
     const topItemsList = document.getElementById("topItemsList");
     if (topItemsList) {
@@ -2883,7 +2954,7 @@ window.db.collection("sales").orderBy("date", "desc").onSnapshot(snap => {
 
     window.updateSalesProgress();
     window.filterSalesTable();
-    renderGroupedSales(allSales);
+    if (typeof window.renderInsights === "function") window.renderInsights();
 });
 
 /**
@@ -2964,6 +3035,25 @@ window.deleteMonthProfit = async (monthKey) => {
     if (salesToDelete.length === 0) {
         return Swal.fire("Notice", "No records found for this month.", "info");
     }
+
+    const typed = await Swal.fire({
+        title: `Delete ${monthKey}?`,
+        html: `This will remove <b>${salesToDelete.length} sales records</b>.<br>Type <b>${monthKey}</b> below to continue.`,
+        icon: "warning",
+        input: "text",
+        inputPlaceholder: monthKey,
+        showCancelButton: true,
+        confirmButtonColor: "#d33",
+        confirmButtonText: "Continue",
+        preConfirm: (v) => {
+            if ((v || "").trim().toLowerCase() !== monthKey.toLowerCase()) {
+                Swal.showValidationMessage(`Please type "${monthKey}" exactly`);
+                return false;
+            }
+            return true;
+        }
+    });
+    if (!typed.isConfirmed) return;
 
     const result = await promptDeletionOptions(
         `Delete All Sales for ${monthKey}?`,
@@ -3047,12 +3137,20 @@ if (salesSearchInput) {
     salesSearchInput.oninput = () => {
         clearTimeout(searchDebounceTimer);
         searchDebounceTimer = setTimeout(() => {
+            window.salesLimit = 25;
+            window.dailyLimit = 7;
             window.filterSalesTable();
         }, 150);
     };
 }
-if (dateFromEl) dateFromEl.onchange = () => window.filterSalesTable();
-if (dateToEl) dateToEl.onchange = () => window.filterSalesTable();
+const resetAndFilterSales = () => {
+    window.salesLimit = 25;
+    window.dailyLimit = 7;
+    document.querySelectorAll("#salesRangeChips .btn").forEach(b => b.classList.remove("active"));
+    window.filterSalesTable();
+};
+if (dateFromEl) dateFromEl.onchange = resetAndFilterSales;
+if (dateToEl) dateToEl.onchange = resetAndFilterSales;
 
 const downloadFilteredBtn = document.getElementById("downloadFilteredPDF");
 if (downloadFilteredBtn) {
@@ -3117,6 +3215,12 @@ if (downloadFilteredBtn) {
 function renderGroupedSales(sales, searchFilter = "") {
     const container = document.getElementById("dailySalesContainer");
     if (!container) return;
+
+    const salesPane = document.getElementById("salesTab");
+    if (salesPane && !salesPane.classList.contains("active")) {
+        window.salesNeedsRender = true;
+        return;
+    }
     container.innerHTML = "";
 
     const query = (searchFilter || "").trim().toLowerCase();
@@ -3140,8 +3244,9 @@ function renderGroupedSales(sales, searchFilter = "") {
     }
 
     let cardsHTML = "";
+    const dayLimit = window.dailyLimit || 7;
 
-    sortedDates.forEach(date => {
+    sortedDates.slice(0, dayLimit).forEach(date => {
         const dailySales = grouped[date];
         let dayTotal = 0;
         let productSummary = {};
@@ -3216,6 +3321,10 @@ function renderGroupedSales(sales, searchFilter = "") {
 
     if (!cardsHTML) {
         cardsHTML = `<div class="text-center text-muted py-4">No sales found for "${query}" across any date.</div>`;
+    }
+
+    if (sortedDates.length > dayLimit) {
+        cardsHTML += `<div class="text-center mt-2"><button class="btn btn-soft btn-sm" onclick="window.showMoreDays()">Show 7 more days (${sortedDates.length - dayLimit} remaining)</button></div>`;
     }
 
     container.innerHTML = cardsHTML;
@@ -3498,34 +3607,43 @@ window.renderProfitCardBreakdown = function () {
     const profitCardBreakdown = document.getElementById("profitCardBreakdown");
     if (!profitCardBreakdown) return;
 
-    profitCardBreakdown.innerHTML = "";
     const monthlyProfits = window.monthlyProfitsCache || {};
     const sortedMonths = Object.keys(monthlyProfits);
+    const meta = document.getElementById("totalProfitMeta");
 
     if (sortedMonths.length === 0) {
         profitCardBreakdown.innerHTML = `<div class="opacity-75">No sales profit history recorded yet.</div>`;
+        if (meta) meta.textContent = "";
         return;
     }
 
-    let html = "";
-    sortedMonths.forEach(mKey => {
-        const mData = monthlyProfits[mKey];
-        const deleteBtnHTML = isAdmin()
-            ? `<button class="btn btn-sm btn-danger py-0 px-2 ms-2 shadow-sm" style="font-size: 0.75rem;" title="Delete all sales for ${mKey}" onclick="window.deleteMonthProfit('${mKey}')"><i class="fas fa-trash-alt me-1"></i>Delete</button>`
-            : '';
+    const fmt = (n) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const currentKey = new Date().toLocaleString('default', { month: 'long', year: 'numeric' });
+    const admin = isAdmin();
 
-        html += `
-            <div class="d-flex justify-content-between align-items-center py-1 border-bottom border-white border-opacity-25">
-                <span class="opacity-75 font-monospace fw-semibold">${mKey}:</span>
-                <div class="d-flex align-items-center flex-wrap justify-content-end">
-                    <span class="fw-bold me-2">Profit: KSh ${mData.profit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                    <small class="opacity-75 me-1">(Rev: KSh ${mData.revenue.toLocaleString()})</small>
-                    ${deleteBtnHTML}
+    let allRevenue = 0, allProfit = 0;
+    sortedMonths.forEach(k => { allRevenue += monthlyProfits[k].revenue; allProfit += monthlyProfits[k].profit; });
+    if (meta) meta.textContent = `${allRevenue ? ((allProfit / allRevenue) * 100).toFixed(1) : "0.0"}% margin on KSh ${fmt(allRevenue)} sales`;
+
+    const rows = sortedMonths.map(mKey => {
+        const m = monthlyProfits[mKey];
+        const margin = m.revenue ? (m.profit / m.revenue) * 100 : 0;
+        const safeKey = mKey.replace(/'/g, "\\'");
+        return `
+            <div class="pm-row">
+                <div class="pm-month">
+                    ${mKey}
+                    ${mKey === currentKey ? '<span class="pm-tag">this month</span>' : ''}
                 </div>
-            </div>
-        `;
-    });
-    profitCardBreakdown.innerHTML = html;
+                <div class="pm-nums">
+                    <span class="pm-profit">KSh ${fmt(m.profit)}</span>
+                    <span class="pm-meta">Sales ${Math.round(m.revenue).toLocaleString()} · ${margin.toFixed(1)}%</span>
+                </div>
+                ${admin ? `<button class="pm-del" title="Delete all sales for ${mKey}" onclick="window.deleteMonthProfit('${safeKey}')"><i class="fas fa-ellipsis"></i></button>` : ''}
+            </div>`;
+    }).join("");
+
+    profitCardBreakdown.innerHTML = `<div class="pm-head"><span>Month</span><span>Profit · Sales · Margin</span></div>${rows}`;
 };
 
 // Download Individual Sale Receipt PDF
@@ -4033,8 +4151,629 @@ window.deleteStaffUser = async (docId) => {
 
 
 /* ==========================================================================
+   SECTION 12B: INSIGHTS (CHARTS), PROFIT & LOSS AND DAY CLOSING
+   ========================================================================== */
+
+const insightMoney = (n) => "KSh " + (parseFloat(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const escHtml = (v) => String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+/**
+ * Cost lookup used when an old sale line has no stored cost
+ */
+function buildCostMap() {
+    const costMap = {};
+    (window.productsCache || []).forEach(doc => {
+        const p = doc.data();
+        costMap[(p.name || "").trim().toLowerCase()] = parseFloat(p.buyPrice) || 0;
+    });
+    return costMap;
+}
+
+/**
+ * Total cost of goods for a single sale (stored item cost first, current buy price as fallback)
+ */
+function saleCostOf(sale, costMap) {
+    return (sale.items || []).reduce((sum, i) => {
+        const unitCost = (i.cost !== undefined) ? (parseFloat(i.cost) || 0) : (costMap[(i.name || "").trim().toLowerCase()] || 0);
+        return sum + unitCost * (parseFloat(i.qty) || 0);
+    }, 0);
+}
+
+/* ---------------------------------------------------------------- Insights */
+window.insightsRange = 30;
+window.topSellersMode = "revenue";
+window.insightCharts = {};
+
+window.setInsightsRange = (days) => {
+    window.insightsRange = days;
+    document.querySelectorAll("#insightsRangeChips .btn").forEach(b => b.classList.toggle("active", Number(b.dataset.range) === days));
+    window.renderInsights();
+};
+
+window.setTopSellersMode = (mode) => {
+    window.topSellersMode = mode;
+    document.querySelectorAll("#topSellersMode .btn").forEach(b => b.classList.toggle("active", b.dataset.mode === mode));
+    window.renderInsights();
+};
+
+function makeInsightChart(canvasId, config) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    if (window.insightCharts[canvasId]) window.insightCharts[canvasId].destroy();
+    window.insightCharts[canvasId] = new Chart(canvas, config);
+}
+
+window.renderInsights = () => {
+    const pane = document.getElementById("insightsTab");
+    if (!pane) return;
+
+    // Charts can't size themselves inside a hidden tab, so wait until it is opened
+    if (!pane.classList.contains("active")) {
+        window.insightsNeedsRender = true;
+        return;
+    }
+    window.insightsNeedsRender = false;
+    if (typeof Chart === "undefined") return;
+
+    const admin = isAdmin();
+    const sales = window.allSales || [];
+    const costMap = buildCostMap();
+    const days = window.insightsRange;
+
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() - (days - 1));
+
+    const muted = cssVar("--muted"), grid = cssVar("--line"), brand = cssVar("--brand");
+    const green = cssVar("--ic-green"), ink = cssVar("--ink");
+    const kFormat = (v) => (Math.abs(v) >= 1000 ? (v / 1000).toLocaleString() + "k" : v);
+
+    Chart.defaults.color = muted;
+    Chart.defaults.font.family = "Inter, system-ui, sans-serif";
+
+    // ---- bucket sales per day
+    const labels = [], revenue = [], profit = [], dayIndex = {};
+    for (let i = 0; i < days; i++) {
+        const d = new Date(start);
+        d.setDate(start.getDate() + i);
+        dayIndex[d.toLocaleDateString("en-CA")] = i;
+        labels.push(d.toLocaleDateString("en-GB", { day: "numeric", month: "short" }));
+        revenue.push(0);
+        profit.push(0);
+    }
+
+    let totalRevenue = 0, totalProfit = 0, orders = 0, units = 0;
+    const products = {};
+
+    sales.forEach(s => {
+        const d = s.date.toDate();
+        if (d < start) return;
+        const i = dayIndex[d.toLocaleDateString("en-CA")];
+        if (i === undefined) return;
+
+        const total = parseFloat(s.total) || 0;
+        const gain = total - saleCostOf(s, costMap);
+        revenue[i] += total;
+        profit[i] += gain;
+        totalRevenue += total;
+        totalProfit += gain;
+        orders++;
+
+        (s.items || []).forEach(it => {
+            const q = parseFloat(it.qty) || 0;
+            units += q;
+            const p = products[it.name] || (products[it.name] = { qty: 0, revenue: 0 });
+            p.qty += q;
+            p.revenue += (parseFloat(it.price) || 0) * q;
+        });
+    });
+
+    const setText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+    setText("kpiRevenue", insightMoney(totalRevenue));
+    setText("kpiOrders", orders.toLocaleString());
+    setText("kpiAvg", insightMoney(orders ? totalRevenue / orders : 0));
+    setText("kpiUnits", window.toMixedFraction(units));
+    setText("kpiProfit", insightMoney(totalProfit));
+    setText("trendTitle", `Sales trend · last ${days} days`);
+
+    const baseScales = {
+        x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8, color: muted } },
+        y: { beginAtZero: true, grid: { color: grid }, ticks: { color: muted, callback: kFormat } }
+    };
+
+    // ---- sales trend (line)
+    const datasets = [{
+        label: "Sales",
+        data: revenue,
+        borderColor: brand,
+        backgroundColor: brand + "26",
+        fill: true,
+        tension: 0.35,
+        borderWidth: 2.5,
+        pointRadius: days <= 14 ? 3 : 0,
+        pointHoverRadius: 5
+    }];
+    if (admin) {
+        datasets.push({
+            label: "Profit",
+            data: profit,
+            borderColor: green,
+            backgroundColor: "transparent",
+            tension: 0.35,
+            borderWidth: 2,
+            pointRadius: days <= 14 ? 3 : 0,
+            pointHoverRadius: 5
+        });
+    }
+    makeInsightChart("salesTrendChart", {
+        type: "line",
+        data: { labels, datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: "index", intersect: false },
+            plugins: {
+                legend: { display: admin, labels: { color: ink, usePointStyle: true, boxWidth: 8 } },
+                tooltip: { callbacks: { label: (ctx) => ` ${ctx.dataset.label}: ${insightMoney(ctx.parsed.y)}` } }
+            },
+            scales: baseScales
+        }
+    });
+
+    // ---- top 10 sellers (horizontal bar)
+    const mode = window.topSellersMode;
+    const top = Object.entries(products).sort((a, b) => b[1][mode] - a[1][mode]).slice(0, 10);
+    makeInsightChart("topSellersChart", {
+        type: "bar",
+        data: {
+            labels: top.map(([n]) => (n.length > 24 ? n.slice(0, 23) + "…" : n)),
+            datasets: [{
+                label: mode === "qty" ? "Units sold" : "Sales (KSh)",
+                data: top.map(([, v]) => v[mode]),
+                backgroundColor: brand,
+                borderRadius: 6,
+                maxBarThickness: 22
+            }]
+        },
+        options: {
+            indexAxis: "y",
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        title: (items) => top[items[0].dataIndex][0],
+                        label: (ctx) => {
+                            const [, v] = top[ctx.dataIndex];
+                            return mode === "qty"
+                                ? ` ${window.toMixedFraction(v.qty)} units · ${insightMoney(v.revenue)}`
+                                : ` ${insightMoney(v.revenue)} · ${window.toMixedFraction(v.qty)} units`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: { beginAtZero: true, grid: { color: grid }, ticks: { color: muted, callback: kFormat } },
+                y: { grid: { display: false }, ticks: { color: ink, font: { size: 11 } } }
+            }
+        }
+    });
+
+    if (admin) renderProfitAndLoss(sales, costMap, { muted, grid, brand, green, kFormat });
+};
+
+/* ------------------------------------------------------------ Profit & loss */
+function renderProfitAndLoss(sales, costMap, c) {
+    const months = {};
+    sales.forEach(s => {
+        const d = s.date.toDate();
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        const m = months[key] || (months[key] = {
+            key,
+            label: d.toLocaleDateString("en-GB", { month: "long", year: "numeric" }),
+            short: d.toLocaleDateString("en-GB", { month: "short", year: "2-digit" }),
+            revenue: 0, cost: 0, orders: 0
+        });
+        m.revenue += parseFloat(s.total) || 0;
+        m.cost += saleCostOf(s, costMap);
+        m.orders++;
+    });
+
+    const list = Object.values(months).sort((a, b) => b.key.localeCompare(a.key));
+    const body = document.getElementById("plTableBody");
+    const foot = document.getElementById("plTableFoot");
+    if (!body || !foot) return;
+
+    if (list.length === 0) {
+        body.innerHTML = `<tr><td colspan="6"><div class="empty-state"><i class="fas fa-chart-pie"></i>No sales recorded yet.</div></td></tr>`;
+        foot.innerHTML = "";
+    } else {
+        const nowKey = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
+        const best = list.reduce((a, b) => ((b.revenue - b.cost) > (a.revenue - a.cost) ? b : a));
+        const tot = { revenue: 0, cost: 0, orders: 0 };
+
+        body.innerHTML = list.map(m => {
+            const gain = m.revenue - m.cost;
+            const margin = m.revenue ? (gain / m.revenue) * 100 : 0;
+            tot.revenue += m.revenue; tot.cost += m.cost; tot.orders += m.orders;
+            return `
+                <tr>
+                    <td class="fw-semibold">${m.label}
+                        ${m.key === nowKey ? '<span class="badge text-bg-light border ms-1">in progress</span>' : ''}
+                        ${m.key === best.key && list.length > 1 ? '<span class="badge ms-1" style="background:var(--brand);color:var(--brand-ink)">best</span>' : ''}
+                    </td>
+                    <td class="text-end">${m.orders.toLocaleString()}</td>
+                    <td class="text-end">${insightMoney(m.revenue)}</td>
+                    <td class="text-end text-muted">${insightMoney(m.cost)}</td>
+                    <td class="text-end fw-bold ${gain >= 0 ? 'text-success' : 'text-danger'}">${insightMoney(gain)}</td>
+                    <td class="text-end">${margin.toFixed(1)}%</td>
+                </tr>`;
+        }).join("");
+
+        const totGain = tot.revenue - tot.cost;
+        foot.innerHTML = `
+            <tr>
+                <th>Total</th>
+                <th class="text-end">${tot.orders.toLocaleString()}</th>
+                <th class="text-end">${insightMoney(tot.revenue)}</th>
+                <th class="text-end">${insightMoney(tot.cost)}</th>
+                <th class="text-end">${insightMoney(totGain)}</th>
+                <th class="text-end">${(tot.revenue ? (totGain / tot.revenue) * 100 : 0).toFixed(1)}%</th>
+            </tr>`;
+    }
+
+    const recent = list.slice(0, 6).reverse();
+    makeInsightChart("plChart", {
+        type: "bar",
+        data: {
+            labels: recent.map(m => m.short),
+            datasets: [
+                { label: "Sales", data: recent.map(m => m.revenue), backgroundColor: c.brand, borderRadius: 6, maxBarThickness: 28 },
+                { label: "Cost of goods", data: recent.map(m => m.cost), backgroundColor: c.muted, borderRadius: 6, maxBarThickness: 28 },
+                { label: "Gross profit", data: recent.map(m => m.revenue - m.cost), backgroundColor: c.green, borderRadius: 6, maxBarThickness: 28 }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: "index", intersect: false },
+            plugins: {
+                legend: { labels: { color: cssVar("--ink"), usePointStyle: true, boxWidth: 8 } },
+                tooltip: { callbacks: { label: (ctx) => ` ${ctx.dataset.label}: ${insightMoney(ctx.parsed.y)}` } }
+            },
+            scales: {
+                x: { grid: { display: false }, ticks: { color: c.muted } },
+                y: { beginAtZero: true, grid: { color: c.grid }, ticks: { color: c.muted, callback: c.kFormat } }
+            }
+        }
+    });
+}
+
+/* --------------------------------------------------------------- Day closing */
+window.dayClosings = {};
+
+function paymentBucket(method) {
+    const v = (method || "Cash").toString().trim().toLowerCase();
+    if (v === "cash") return "cash";
+    if (v.includes("mpesa") || v.includes("m-pesa")) return "mpesa";
+    if (v === "card") return "card";
+    if (v.includes("bank")) return "bank";
+    return "other";
+}
+
+function computeDaySummary(dateValue) {
+    const day = new Date(dateValue + "T00:00:00");
+    const dayKey = day.toDateString();
+    const buckets = {
+        cash: { label: "Cash", amount: 0, count: 0 },
+        mpesa: { label: "M-PESA", amount: 0, count: 0 },
+        card: { label: "Card", amount: 0, count: 0 },
+        bank: { label: "Bank Transfer", amount: 0, count: 0 },
+        other: { label: "Other", amount: 0, count: 0 }
+    };
+    let total = 0, count = 0;
+
+    (window.allSales || []).forEach(s => {
+        if (s.date.toDate().toDateString() !== dayKey) return;
+        const b = buckets[paymentBucket(s.payment)];
+        const amt = parseFloat(s.total) || 0;
+        b.amount += amt;
+        b.count++;
+        total += amt;
+        count++;
+    });
+
+    return {
+        dateKey: dateValue,
+        label: day.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" }),
+        buckets, total, count
+    };
+}
+
+window.openCloseDayModal = () => {
+    document.getElementById("closeDayDate").value = new Date().toLocaleDateString("en-CA");
+    document.getElementById("closeDayFloat").value = "";
+    document.getElementById("closeDayCounted").value = "";
+    document.getElementById("closeDayNotes").value = "";
+    window.updateCloseDaySummary();
+    // Cashiers count blind: only admins see the sales breakdown, expected cash and the difference
+    document.getElementById("closeDayStaffHint").classList.toggle("d-none", isAdmin());
+    bootstrap.Modal.getOrCreateInstance(document.getElementById("closeDayModal")).show();
+};
+
+window.updateCloseDaySummary = () => {
+    const dateValue = document.getElementById("closeDayDate").value;
+    if (!dateValue) return;
+
+    const sum = computeDaySummary(dateValue);
+    const openingFloat = parseFloat(document.getElementById("closeDayFloat").value) || 0;
+    const countedRaw = document.getElementById("closeDayCounted").value;
+
+    const rows = Object.values(sum.buckets)
+        .filter(b => b.count > 0 || b.label !== "Other")
+        .map(b => `
+            <div class="cd-row">
+                <span>${b.label}<small>${b.count} sale${b.count === 1 ? "" : "s"}</small></span>
+                <strong>${insightMoney(b.amount)}</strong>
+            </div>`).join("");
+    document.getElementById("closeDayBreakdown").innerHTML = rows + `
+        <div class="cd-row cd-total">
+            <span>Total sales<small>${sum.count} sale${sum.count === 1 ? "" : "s"}</small></span>
+            <strong>${insightMoney(sum.total)}</strong>
+        </div>`;
+
+    const expected = openingFloat + sum.buckets.cash.amount;
+    document.getElementById("closeDayExpected").textContent = insightMoney(expected);
+
+    const diffEl = document.getElementById("closeDayDiff");
+    if (countedRaw === "") {
+        diffEl.innerHTML = `<span class="cd-pill">Enter the cash you counted</span>`;
+    } else {
+        const diff = Math.round(((parseFloat(countedRaw) || 0) - expected) * 100) / 100;
+        if (diff === 0) diffEl.innerHTML = `<span class="cd-pill ok"><i class="fas fa-circle-check me-1"></i>Balanced</span>`;
+        else if (diff < 0) diffEl.innerHTML = `<span class="cd-pill bad"><i class="fas fa-triangle-exclamation me-1"></i>Short by ${insightMoney(Math.abs(diff))}</span>`;
+        else diffEl.innerHTML = `<span class="cd-pill warn"><i class="fas fa-circle-info me-1"></i>Over by ${insightMoney(diff)}</span>`;
+    }
+
+    const existing = window.dayClosings[dateValue];
+    const notice = document.getElementById("closeDayExisting");
+    if (existing) {
+        notice.classList.remove("d-none");
+        notice.innerHTML = `<i class="fas fa-lock me-1"></i>This day was already closed by <strong>${escHtml(existing.closedBy || "unknown")}</strong>${isAdmin() ? " — saving will replace that record." : ". Only an admin can change it."}`;
+    } else {
+        notice.classList.add("d-none");
+    }
+};
+
+["closeDayDate", "closeDayFloat", "closeDayCounted"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("input", () => window.updateCloseDaySummary());
+});
+
+window.saveDayClosing = async () => {
+    const dateValue = document.getElementById("closeDayDate").value;
+    const countedRaw = document.getElementById("closeDayCounted").value;
+    if (!dateValue) return Swal.fire("Pick a date", "Choose the day you are closing.", "warning");
+    if (countedRaw === "" || parseFloat(countedRaw) < 0) {
+        return Swal.fire("Cash count needed", "Enter the cash you actually counted in the till.", "warning");
+    }
+
+    const sum = computeDaySummary(dateValue);
+    const openingFloat = parseFloat(document.getElementById("closeDayFloat").value) || 0;
+    const counted = parseFloat(countedRaw) || 0;
+    const expected = openingFloat + sum.buckets.cash.amount;
+    const difference = Math.round((counted - expected) * 100) / 100;
+    const ref = window.db.collection("day_closings").doc(dateValue);
+
+    try {
+        const existing = await ref.get();
+        if (existing.exists) {
+            if (!isAdmin()) {
+                return Swal.fire("Already closed", `This day was already closed by ${existing.data().closedBy || "someone"}. Ask an admin to change it.`, "info");
+            }
+            const ok = await Swal.fire({
+                title: "Replace existing closing?",
+                text: `${sum.label} was already closed by ${existing.data().closedBy || "someone"}. Saving will overwrite it.`,
+                icon: "warning",
+                showCancelButton: true,
+                confirmButtonText: "Yes, replace"
+            });
+            if (!ok.isConfirmed) return;
+        }
+
+        await ref.set({
+            dateKey: dateValue,
+            dateLabel: sum.label,
+            openingFloat,
+            cashSales: sum.buckets.cash.amount,
+            mpesaSales: sum.buckets.mpesa.amount,
+            cardSales: sum.buckets.card.amount,
+            bankSales: sum.buckets.bank.amount,
+            otherSales: sum.buckets.other.amount,
+            totalSales: sum.total,
+            salesCount: sum.count,
+            expectedCash: expected,
+            countedCash: counted,
+            difference,
+            notes: document.getElementById("closeDayNotes").value.trim(),
+            closedBy: getCurrentUserEmail() || "unknown",
+            closedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        hideModalById("closeDayModal");
+        const msg = difference === 0 ? "Cash balanced perfectly."
+            : difference < 0 ? `Cash is short by ${insightMoney(Math.abs(difference))}.`
+            : `Cash is over by ${insightMoney(difference)}.`;
+        if (isAdmin()) {
+            Swal.fire({
+                icon: difference === 0 ? "success" : "warning",
+                title: "Day closed",
+                text: `${sum.label} saved. ${msg}`
+            });
+        } else {
+            Swal.fire({
+                icon: "success",
+                title: "Day closed",
+                text: `Your cash count of ${insightMoney(counted)} for ${sum.label} has been submitted.`
+            });
+        }
+    } catch (err) {
+        console.error("Day closing error:", err);
+        Swal.fire("Could not save closing", err.message + " (If this says permission denied, allow read/write on the 'day_closings' collection in your Firestore rules.)", "error");
+    }
+};
+
+window.renderDayClosings = () => {
+    const body = document.getElementById("dayClosingsBody");
+    if (!body) return;
+
+    const list = Object.values(window.dayClosings).sort((a, b) => b.dateKey.localeCompare(a.dateKey));
+    if (list.length === 0) {
+        body.innerHTML = `<tr><td colspan="9"><div class="empty-state"><i class="fas fa-calendar-check"></i>No days have been closed yet.</div></td></tr>`;
+        return;
+    }
+
+    const admin = isAdmin();
+    body.innerHTML = list.map(c => {
+        const diff = Math.round((parseFloat(c.difference) || 0) * 100) / 100;
+        const pill = diff === 0 ? `<span class="cd-pill ok">Balanced</span>`
+            : diff < 0 ? `<span class="cd-pill bad">Short ${insightMoney(Math.abs(diff))}</span>`
+            : `<span class="cd-pill warn">Over ${insightMoney(diff)}</span>`;
+        return `
+            <tr>
+                <td class="fw-semibold text-nowrap">${escHtml(c.dateLabel || c.dateKey)}</td>
+                <td class="text-muted">${escHtml(c.closedBy || "")}</td>
+                <td class="text-end">${insightMoney(c.totalSales)}</td>
+                <td class="text-end">${insightMoney(c.expectedCash)}</td>
+                <td class="text-end">${insightMoney(c.countedCash)}</td>
+                <td class="text-end">${pill}</td>
+                <td class="text-center">${c.notes ? `<i class="fas fa-note-sticky text-muted" title="${escHtml(c.notes)}"></i>` : ""}</td>
+                <td class="text-end">${admin ? `<button class="btn btn-soft btn-sm" title="Delete closing" onclick="window.deleteDayClosing('${escHtml(c.id)}')"><i class="fas fa-trash-can text-danger"></i></button>` : ""}</td>
+            </tr>`;
+    }).join("");
+};
+
+window.deleteDayClosing = async (id) => {
+    if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
+    const res = await Swal.fire({
+        title: "Delete this closing?",
+        text: "The day will be open again and can be closed once more.",
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonColor: "#d33",
+        confirmButtonText: "Yes, delete"
+    });
+    if (!res.isConfirmed) return;
+    try {
+        await window.db.collection("day_closings").doc(id).delete();
+    } catch (err) {
+        Swal.fire("Error", err.message, "error");
+    }
+};
+
+window.db.collection("day_closings").orderBy("closedAt", "desc").limit(60).onSnapshot(snap => {
+    window.dayClosings = {};
+    snap.forEach(d => { window.dayClosings[d.id] = { id: d.id, ...d.data() }; });
+    window.renderDayClosings();
+    const modalEl = document.getElementById("closeDayModal");
+    if (modalEl && modalEl.classList.contains("show")) window.updateCloseDaySummary();
+}, err => {
+    console.warn("Day closings listener:", err);
+    const body = document.getElementById("dayClosingsBody");
+    if (body) body.innerHTML = `<tr><td colspan="9"><div class="empty-state"><i class="fas fa-lock"></i>Could not load closings (${escHtml(err.message)}).</div></td></tr>`;
+});
+
+
+/* ==========================================================================
    SECTION 13: UI NAVIGATION & SCROLL HELPERS
    ========================================================================== */
+
+/**
+ * "What's new" popup: shown once per person after an update.
+ * Add a NEW release at the TOP of APP_RELEASES (with a new id) whenever you ship changes.
+ * Items marked admin:true are only shown to admins.
+ */
+const APP_RELEASES = [
+    {
+        id: "2026.10.32",
+        date: "24 Oct 2026",
+        title: "A fresh look and new tools",
+        items: [
+            { icon: "fa-moon", text: "Dark theme by default, with a sun/moon button in the top bar to switch to light mode." },
+            { icon: "fa-mobile-screen", text: "Works properly on phones: tables scroll sideways with the name column pinned, and buttons respond faster." },
+            { icon: "fa-receipt", text: "Sales are now a clean list grouped by day. Tap a sale to see its items. Quick filters: Today, Yesterday, 7 days, This month." },
+            { icon: "fa-layer-group", text: "Sales tab now has sections: Sales and Daily Products Sold, so nothing needs scrolling." },
+            { icon: "fa-calendar-check", text: "Close Day: at the end of the day enter the cash you counted in the till and submit it." },
+            { icon: "fa-user-clock", text: "If you forgot to clock out on your last shift, you'll be asked the time you left when you log in." },
+            { icon: "fa-window-restore", text: "Adding customers now happens in a neat popup window." },
+            { icon: "fa-arrows-rotate", text: "The app now tells you when a new update is available, with a Refresh button." },
+            { icon: "fa-bell", text: "Notifications have a cleaner design." },
+
+            { icon: "fa-chart-pie", admin: true, text: "New Insights tab: sales trend chart, top 10 sellers, and Profit & Loss by month." },
+            { icon: "fa-sack-dollar", admin: true, text: "New Profit section in Sales: today's profit compared with yesterday, month-by-month margins, and a typed confirmation before deleting a month." },
+            { icon: "fa-scale-balanced", admin: true, text: "Closing Day section in Sales: see whether each day's cash count was balanced, short or over. Cashiers count blind and can't see the expected amount." },
+            { icon: "fa-boxes-packing", admin: true, text: "Add Product, Edit Product and Stock (add or reduce with a reason) now open in popup windows." },
+            { icon: "fa-id-badge", admin: true, text: "Add and edit Staff now happen in a popup window, with a show/hide password button." },
+            { icon: "fa-coins", admin: true, text: "Profit amounts now show two decimals (for example KSh 207,491.54)." }
+        ]
+    }
+];
+
+function whatsNewKey() {
+    return `madollar_whatsnew_${(getCurrentUserEmail() || "global").toLowerCase().trim()}`;
+}
+
+window.showWhatsNew = (force = false) => {
+    const modalEl = document.getElementById("whatsNewModal");
+    const body = document.getElementById("whatsNewBody");
+    if (!modalEl || !body || modalEl.classList.contains("show")) return;
+
+    let seen = null;
+    try { seen = localStorage.getItem(whatsNewKey()); } catch (e) { }
+
+    let releases;
+    if (force) releases = APP_RELEASES;
+    else if (seen === APP_RELEASES[0].id) releases = [];
+    else {
+        const idx = APP_RELEASES.findIndex(r => r.id === seen);
+        releases = idx === -1 ? APP_RELEASES.slice(0, 1) : APP_RELEASES.slice(0, idx);
+    }
+
+    const admin = isAdmin();
+    const html = releases.map(r => {
+        const items = r.items.filter(i => admin || !i.admin);
+        if (!items.length) return "";
+        return `
+            <div class="wn-release">
+                <div class="wn-head"><strong>${r.title}</strong><span>${r.date}</span></div>
+                ${items.map(i => `
+                    <div class="wn-item">
+                        <span class="wn-ico"><i class="fas ${i.icon}"></i></span>
+                        <span>${i.text}${i.admin ? ' <span class="wn-tag">Admin</span>' : ''}</span>
+                    </div>`).join("")}
+            </div>`;
+    }).join("");
+
+    if (!html) return;
+
+    body.innerHTML = html;
+    modalEl.addEventListener("hidden.bs.modal", () => {
+        try { localStorage.setItem(whatsNewKey(), APP_RELEASES[0].id); } catch (e) { }
+    }, { once: true });
+    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+};
+
+// Waits for other popups (notifications, check-in dialogs) to finish before showing "What's new"
+window.showWhatsNewWhenReady = (attempt = 0) => {
+    const busy = (typeof Swal !== "undefined" && Swal.isVisible()) || document.querySelector(".modal.show");
+    if (busy && attempt < 6) {
+        setTimeout(() => window.showWhatsNewWhenReady(attempt + 1), 1500);
+        return;
+    }
+    if (!busy) window.showWhatsNew(false);
+};
 
 /**
  * New-version notifier: compares the server's copy of main.js (ETag / Last-Modified)
@@ -4097,11 +4836,34 @@ window.toggleTheme = () => {
     const next = document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light";
     try { localStorage.setItem("madollar_theme", next); } catch (e) { }
     applyTheme(next);
+    if (typeof window.renderInsights === "function") window.renderInsights();
 };
 
 applyTheme(document.documentElement.getAttribute("data-theme") || "dark");
 
 document.addEventListener("DOMContentLoaded", function () {
+    // Sales sub-tabs: the search / date filters only apply to Transactions and Daily Summary
+    const salesSubTabs = document.getElementById("salesSubTabs");
+    if (salesSubTabs) {
+        salesSubTabs.addEventListener("shown.bs.tab", (e) => {
+            const target = e.target.getAttribute("data-bs-target");
+            const filters = document.getElementById("salesFilters");
+            if (filters) filters.classList.toggle("d-none", target === "#salesSubProfit" || target === "#salesSubClosings");
+        });
+    }
+
+    const insightsTabBtn = document.querySelector('[data-bs-target="#insightsTab"]');
+    if (insightsTabBtn) {
+        insightsTabBtn.addEventListener("shown.bs.tab", () => window.renderInsights());
+    }
+
+    const salesTabBtn = document.querySelector('[data-bs-target="#salesTab"]');
+    if (salesTabBtn) {
+        salesTabBtn.addEventListener("shown.bs.tab", () => {
+            if (window.salesNeedsRender !== false) window.filterSalesTable();
+        });
+    }
+
     const backToTopBtn = document.getElementById("backToTopBtn");
 
     if (backToTopBtn) {
