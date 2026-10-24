@@ -225,7 +225,7 @@ window.openTargetModal = () => {
 
     window.toggleTargetInputMode();
     const modalEl = document.getElementById("targetModal");
-    if (modalEl) new bootstrap.Modal(modalEl).show();
+    if (modalEl) bootstrap.Modal.getOrCreateInstance(modalEl).show();
 };
 
 /**
@@ -367,38 +367,10 @@ window.setPortalMode = (mode) => {
 
     if (loginMsg) loginMsg.textContent = "";
 
-    const resetBtn = (btn) => {
-        btn.style.transform = "scale(1)";
-        btn.classList.remove("shadow");
-    };
-
     if (adminBtn && staffBtn) {
-        resetBtn(adminBtn);
-        resetBtn(staffBtn);
-
-        if (mode === "admin") {
-            adminBtn.style.backgroundColor = "#212529";
-            adminBtn.style.color = "#ffffff";
-            adminBtn.style.border = "2px solid #ffc107";
-            adminBtn.classList.add("shadow");
-
-            staffBtn.style.backgroundColor = "#ffffff";
-            staffBtn.style.color = "#000000";
-            staffBtn.style.border = "1px solid #000";
-
-            if (loginBtn) loginBtn.textContent = "Login as Admin";
-        } else {
-            staffBtn.style.backgroundColor = "#212529";
-            staffBtn.style.color = "#ffffff";
-            staffBtn.style.border = "2px solid #0d6efd";
-            staffBtn.classList.add("shadow");
-
-            adminBtn.style.backgroundColor = "#ffffff";
-            adminBtn.style.color = "#000000";
-            adminBtn.style.border = "1px solid #000";
-
-            if (loginBtn) loginBtn.textContent = "Login as Staff";
-        }
+        adminBtn.classList.toggle("active", mode === "admin");
+        staffBtn.classList.toggle("active", mode !== "admin");
+        if (loginBtn) loginBtn.textContent = mode === "admin" ? "Login as Admin" : "Login as Staff";
     }
 };
 
@@ -481,6 +453,15 @@ if (loginBtn) {
                     return;
                 }
 
+                // Staff must close any earlier unfinished shift before logging in again
+                if ((userData.role || "staff") !== "admin") {
+                    const cleared = await resolvePendingClockOuts(emailVal);
+                    if (!cleared) {
+                        if (loginMsg) loginMsg.textContent = "Login cancelled: enter the time you left work on your previous shift.";
+                        return;
+                    }
+                }
+
                 window.customSessionActive = true;
                 window.loggedStaffEmail = emailVal;
                 window.currentUserEmail = emailVal;
@@ -499,6 +480,7 @@ if (loginBtn) {
                 if (check.empty) {
                     Swal.fire({
                         title: "Attendance Check-In Required",
+                        confirmButtonColor: "#a86d27",
                         text: "You must check in with your location to access your staff dashboard.",
                         icon: "warning",
                         confirmButtonText: "Clock In Now",
@@ -642,6 +624,70 @@ const OFFICE_LON = 37.131476;
 const MAX_DISTANCE = 0.090;
 
 /**
+ * Checks the staff member's latest shift; if it was on an earlier day and never clocked out,
+ * asks for the time they left. Resolves true when everything is closed, false if they cancel.
+ */
+async function resolvePendingClockOuts(email) {
+    const todayKey = new Date().toDateString();
+
+    const snap = await window.db.collection("attendance")
+        .where("staffEmail", "==", email)
+        .get();
+
+    // Only the staff member's most recent shift matters; older unclosed days are ignored
+    const latest = snap.docs
+        .filter(d => d.data().clockIn)
+        .sort((a, b) => b.data().clockIn.toMillis() - a.data().clockIn.toMillis())[0];
+
+    const pending = (latest && !latest.data().clockOut && latest.data().clockIn.toDate().toDateString() !== todayKey)
+        ? [latest]
+        : [];
+
+    for (const doc of pending) {
+        const a = doc.data();
+        const clockIn = a.clockIn.toDate();
+
+        const res = await Swal.fire({
+            title: "Previous shift not closed",
+            html: `You clocked in on <b>${a.date}</b> at <b>${clockIn.toLocaleTimeString()}</b> but never clocked out.<br>Enter the time you left work to continue.`,
+            icon: "warning",
+            input: "time",
+            inputLabel: "Time you left work",
+            showCancelButton: true,
+            confirmButtonText: "Save & Continue",
+            cancelButtonText: "Cancel Login",
+            allowOutsideClick: false,
+            allowEscapeKey: false,
+            preConfirm: (val) => {
+                if (!val) {
+                    Swal.showValidationMessage("Please enter the time you left work.");
+                    return false;
+                }
+                const [h, m] = val.split(":").map(Number);
+                const out = new Date(clockIn);
+                out.setHours(h, m, 0, 0);
+                // A leaving time earlier than the clock-in time means the shift ended after midnight
+                if (out <= clockIn) out.setDate(out.getDate() + 1);
+                if (out > new Date()) {
+                    Swal.showValidationMessage("The leaving time cannot be in the future.");
+                    return false;
+                }
+                return out;
+            }
+        });
+
+        if (!res.isConfirmed) return false;
+
+        await doc.ref.update({
+            clockOut: firebase.firestore.Timestamp.fromDate(res.value),
+            clockOutManual: true,
+            clockOutEnteredAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+    }
+    return true;
+}
+
+/**
  * Realtime listener for active attendance logs
  */
 function startAttendanceRealtimeListener() {
@@ -669,12 +715,12 @@ function startAttendanceRealtimeListener() {
 
                 rowsHTML += `
                     <tr>
-                        <td>${a.date}</td>
-                        ${isAdminRole ? `<td>${a.staffEmail}</td>` : ""}
-                        <td>${a.clockIn.toDate().toLocaleTimeString()}</td>
-                        <td>${a.clockOut ? a.clockOut.toDate().toLocaleTimeString() : "Ongoing"}</td>
+                        <td data-label="Date">${a.date}</td>
+                        ${isAdminRole ? `<td data-label="Staff">${a.staffEmail}</td>` : ""}
+                        <td data-label="In">${a.clockIn.toDate().toLocaleTimeString()}</td>
+                        <td data-label="Out">${a.clockOut ? a.clockOut.toDate().toLocaleTimeString() + (a.clockOutManual ? ' <span class="badge text-bg-light border" title="Entered manually by staff on next login">manual</span>' : '') : "Ongoing"}</td>
                         ${isAdminRole ? `
-                            <td>
+                            <td class="text-end">
                                 <button class="btn btn-sm btn-outline-danger"
                                     title="Delete Attendance Record"
                                     onclick="window.deleteAttendanceRecord('${doc.id}')">
@@ -837,10 +883,36 @@ window.exportAttendance = async () => {
 /**
  * Quick Restock Handler: Fetches current stock, increments value, logs previousStock & afterStock snapshots, and notifies staff.
  */
+/**
+ * Opens the Update Stock modal for a product (Admin only)
+ */
+window.openStockModal = (productId, productName) => {
+    if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
+
+    const prodDoc = (window.productsCache || []).find(d => d.id === productId);
+    window.stockModalProduct = { id: productId, name: productName };
+
+    document.getElementById("stockModalProductName").textContent = productName;
+    document.getElementById("stockModalCurrent").textContent = prodDoc ? window.toMixedFraction(prodDoc.data().stock) : "0";
+    document.getElementById("stockQtyInput").value = "";
+    document.getElementById("stockReasonInput").value = "";
+
+    bootstrap.Modal.getOrCreateInstance(document.getElementById("stockModal")).show();
+};
+
+/**
+ * Closes the Update Stock modal after a successful change
+ */
+function closeStockModal() {
+    const modalEl = document.getElementById("stockModal");
+    const inst = modalEl && bootstrap.Modal.getInstance(modalEl);
+    if (inst) inst.hide();
+}
+
 window.quickRestock = async (productId, productName) => {
     if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
 
-    const inputEl = document.getElementById(`restockInput-${productId}`);
+    const inputEl = document.getElementById("stockQtyInput");
     if (!inputEl) return;
     const amountToAdd = parseFloat(inputEl.value);
 
@@ -890,7 +962,8 @@ window.quickRestock = async (productId, productName) => {
         }
 
         inputEl.value = "";
-        Swal.fire("Restocked!", `Added ${amountToAdd} to ${productName}. Stock is now ${window.toMixedFraction(afterStock)}.`, "success");
+        closeStockModal();
+        Swal.fire("Restocked!",`Added ${amountToAdd} to ${productName}. Stock is now ${window.toMixedFraction(afterStock)}.`, "success");
     } catch (err) {
         console.error("Quick restock error:", err);
         Swal.fire("Error", "Failed to process restock: " + err.message, "error");
@@ -903,8 +976,8 @@ window.quickRestock = async (productId, productName) => {
 window.adjustStock = async (productId, productName, operationalMode) => {
     if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
 
-    const qtyEl = document.getElementById(`restockInput-${productId}`);
-    const reasonEl = document.getElementById(`reasonInput-${productId}`);
+    const qtyEl = document.getElementById("stockQtyInput");
+    const reasonEl = document.getElementById("stockReasonInput");
     if (!qtyEl || !reasonEl) return;
 
     const quantity = parseFloat(qtyEl.value);
@@ -963,12 +1036,35 @@ window.adjustStock = async (productId, productName, operationalMode) => {
 
         qtyEl.value = "";
         reasonEl.value = "";
+        closeStockModal();
         Swal.fire("Stock Adjusted", `Updated ${productName}. New stock: ${window.toMixedFraction(afterStock)}.`, "success");
     } catch (err) {
         console.error("Stock adjustment error:", err);
         Swal.fire("Error", "Failed to adjust stock: " + err.message, "error");
     }
 };
+
+// Update Stock modal actions: "Add Stock" logs a plain restock unless a reason is given; "Reduce" always needs a reason
+(function bindStockModalButtons() {
+    const addBtn = document.getElementById("stockAddBtn");
+    const removeBtn = document.getElementById("stockRemoveBtn");
+    const reasonEl = document.getElementById("stockReasonInput");
+
+    if (addBtn) {
+        addBtn.onclick = () => {
+            const p = window.stockModalProduct;
+            if (!p) return;
+            if (reasonEl && reasonEl.value.trim()) window.adjustStock(p.id, p.name, "add");
+            else window.quickRestock(p.id, p.name);
+        };
+    }
+    if (removeBtn) {
+        removeBtn.onclick = () => {
+            const p = window.stockModalProduct;
+            if (p) window.adjustStock(p.id, p.name, "remove");
+        };
+    }
+})();
 
 /**
  * Single Consolidated Product Renderer for Admin & Staff Views
@@ -988,7 +1084,7 @@ window.renderProducts = function (docs) {
     let headerHTML = `<tr><th>Name</th>`;
     if (isAdmin()) headerHTML += `<th>Buy</th>`;
     headerHTML += `<th>Sell</th><th>Stock</th><th>Min</th>`;
-    if (isAdmin()) headerHTML += `<th>Quick Restock</th><th>Actions</th>`;
+    if (isAdmin()) headerHTML += `<th class="text-end">Actions</th>`;
     headerHTML += `</tr>`;
 
     if (productsHead) productsHead.innerHTML = headerHTML;
@@ -1004,30 +1100,30 @@ window.renderProducts = function (docs) {
 
         if (isLow) lowStockItems.push(p);
 
-        let rowHTML = `<tr class="${isLow ? 'table-danger' : ''}"><td>${p.name}</td>`;
+        let rowHTML = `<tr class="${isLow ? 'table-danger' : ''}"><td data-label="Product" class="fw-semibold">${p.name}${isLow ? ' <span class="low-stock ms-1">Low</span>' : ''}</td>`;
         if (isAdmin()) {
-            rowHTML += `<td>KSh ${parseFloat(p.buyPrice || 0).toFixed(2)}</td>`;
+            rowHTML += `<td data-label="Buy">KSh ${parseFloat(p.buyPrice || 0).toFixed(2)}</td>`;
         }
-        rowHTML += `<td>KSh ${parseFloat(p.price || 0).toFixed(2)}</td>
-                   <td><strong>${window.toMixedFraction(p.stock)}</strong></td>
-                   <td>${window.toMixedFraction(p.min)}</td>`;
+        rowHTML += `<td data-label="Sell">KSh ${parseFloat(p.price || 0).toFixed(2)}</td>
+                   <td data-label="Stock"><span class="stock-pill">${window.toMixedFraction(p.stock)}</span></td>
+                   <td data-label="Min" class="text-muted">${window.toMixedFraction(p.min)}</td>`;
 
         if (isAdmin()) {
             rowHTML += `
-            <td>
-                <div class="input-group input-group-sm" style="width: 130px;">
-                    <input type="number" step="any" id="restockInput-${id}" class="form-control" placeholder="Qty">
-                    <button class="btn btn-sm btn-success" title="Quick Restock" onclick="window.quickRestock('${id}', '${p.name.replace(/'/g, "\\'")}')">+</button>
-                </div>
-            </td>
-            <td>
-                <button class="btn btn-sm btn-warning editBtn" data-id="${id}">Edit</button>
-                <button class="btn btn-sm btn-danger delBtn" data-id="${id}">Delete</button>
+            <td class="text-end text-nowrap">
+                <button class="btn btn-sm btn-soft stockBtn" data-id="${id}" title="Add or reduce stock"><i class="fas fa-boxes-packing me-1 text-success"></i>Stock</button>
+                <button class="btn btn-sm btn-soft editBtn" data-id="${id}" title="Edit product"><i class="fas fa-pen text-primary"></i></button>
+                <button class="btn btn-sm btn-soft delBtn" data-id="${id}" title="Delete product"><i class="fas fa-trash-can text-danger"></i></button>
             </td>`;
         }
         rowHTML += `</tr>`;
         rowsHTML += rowHTML;
     });
+
+    if (!rowsHTML) {
+        const cols = isAdmin() ? 6 : 3 + 1;
+        rowsHTML = `<tr><td colspan="${cols}"><div class="empty-state"><i class="fas fa-wine-bottle"></i>No products found.</div></td></tr>`;
+    }
 
     productsTable.innerHTML = rowsHTML;
 
@@ -1041,15 +1137,29 @@ window.renderProducts = function (docs) {
             const modalBody = document.querySelector("#lowStockModal .modal-body");
             if (modalBody) {
                 modalBody.innerHTML = lowStockItems.length > 0
-                    ? lowStockItems.map(p => `<p><strong>${p.name}</strong>: ${window.toMixedFraction(p.stock)} remaining (Min: ${window.toMixedFraction(p.min)})</p>`).join('')
-                    : "<p>All stock levels are healthy.</p>";
+                    ? lowStockItems.map(p => `
+                        <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+                            <strong>${p.name}</strong>
+                            <span class="text-end">
+                                <span class="low-stock">${window.toMixedFraction(p.stock)} left</span>
+                                <small class="text-muted d-block">Min: ${window.toMixedFraction(p.min)}</small>
+                            </span>
+                        </div>`).join('')
+                    : `<div class="empty-state"><i class="fas fa-circle-check"></i>All stock levels are healthy.</div>`;
                 const modalEl = document.getElementById("lowStockModal");
-                if (modalEl) new bootstrap.Modal(modalEl).show();
+                if (modalEl) bootstrap.Modal.getOrCreateInstance(modalEl).show();
             }
         };
     }
 
-    // 4. Attach Edit Listeners
+    // 4. Attach Stock + Edit Listeners
+    document.querySelectorAll(".stockBtn").forEach(btn => {
+        btn.onclick = () => {
+            const targetDoc = docs.find(d => d.id === btn.dataset.id);
+            if (targetDoc) window.openStockModal(targetDoc.id, targetDoc.data().name);
+        };
+    });
+
     document.querySelectorAll(".editBtn").forEach(btn => {
         btn.onclick = () => {
             editProductId = btn.dataset.id;
@@ -1070,7 +1180,7 @@ window.renderProducts = function (docs) {
             if (editMin) editMin.value = p.min || 0;
 
             const editModalEl = document.getElementById("editProductModal");
-            if (editModalEl) new bootstrap.Modal(editModalEl).show();
+            if (editModalEl) bootstrap.Modal.getOrCreateInstance(editModalEl).show();
         };
     });
 
@@ -1121,6 +1231,21 @@ window.renderProducts = function (docs) {
 /**
  * Initializes Products Dashboard & Management Listeners
  */
+window.openAddProductModal = () => {
+    if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
+    ["prodName", "prodBuyPrice", "prodPrice", "prodStock", "prodMin"].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = "";
+    });
+    bootstrap.Modal.getOrCreateInstance(document.getElementById("addProductModal")).show();
+};
+
+function hideModalById(id) {
+    const el = document.getElementById(id);
+    const inst = el && bootstrap.Modal.getInstance(el);
+    if (inst) inst.hide();
+}
+
 function initDashboard() {
     const addProductBtn = document.getElementById("addProductBtn");
     const saveEditBtn = document.getElementById("saveEditBtn");
@@ -1177,6 +1302,7 @@ function initDashboard() {
                     timestamp: timestamp
                 });
 
+                hideModalById("addProductModal");
                 Swal.fire("Success!", `Product "${pName}" added to inventory`, "success");
                 prodName.value = prodPrice.value = prodBuyPrice.value = prodStock.value = prodMin.value = "";
             } catch (err) {
@@ -1197,6 +1323,7 @@ function initDashboard() {
                     stock: parseFloat(document.getElementById("editProdStock").value) || 0,
                     min: parseFloat(document.getElementById("editProdMin").value) || 0
                 });
+                hideModalById("editProductModal");
                 Swal.fire("Updated!", "Product details saved.", "success");
             } catch (err) {
                 Swal.fire("Error", "Failed to update product: " + err.message, "error");
@@ -1377,11 +1504,11 @@ window.refreshNotificationUI = function () {
         badge.classList.toggle("d-none", unreadNotifs.length === 0);
     }
 
-    // Render Modal Container List with High-Contrast Vivid Font Styling
+    // Render Modal Container List
     const container = document.getElementById("notificationsList");
     if (container) {
         if (validNotifs.length === 0) {
-            container.innerHTML = `<div class="p-4 text-center text-white font-monospace fs-6">No restock notifications recorded in the last 24 hours.</div>`;
+            container.innerHTML = `<div class="empty-state"><i class="fas fa-bell-slash"></i>No notifications in the last 24 hours.</div>`;
         } else {
             container.innerHTML = validNotifs.map(n => {
                 const isUnread = !readIds.includes(n.id);
@@ -1390,49 +1517,41 @@ window.refreshNotificationUI = function () {
                 const prevStock = n.previousStock !== undefined ? n.previousStock : 0;
                 const qtyAdded = n.quantityAdded !== undefined ? n.quantityAdded : 0;
                 const aftStock = n.afterStock !== undefined ? n.afterStock : 0;
+                const qtyClass = parseFloat(qtyAdded) < 0 ? 'text-danger' : 'text-success';
+                const qtySign = parseFloat(qtyAdded) < 0 ? '' : '+';
 
                 const deleteBtn = isAdmin() ? `
-                    <button class="btn btn-xs btn-outline-danger py-1 px-2 text-danger fw-bold me-1" style="font-size: 11px; border-color: #ff5252;" onclick="window.deleteNotification('${n.id}', '${n.type || 'restock'}')">
-                        <i class="fas fa-trash-alt me-1"></i> Delete
-                    </button>
-                ` : '';
+                    <button class="btn btn-soft btn-sm" onclick="window.deleteNotification('${n.id}', '${n.type || 'restock'}')">
+                        <i class="fas fa-trash-can text-danger me-1"></i>Delete
+                    </button>` : '';
 
                 const markReadBtn = isUnread ? `
-                    <button class="btn btn-xs btn-outline-warning py-1 px-2 text-warning fw-bold me-1" style="font-size: 11px; border-color: #ffc107;" onclick="window.markNotifAsRead('${n.id}')">
-                        <i class="fas fa-check me-1"></i> Mark Read
-                    </button>
-                ` : '';
-
-                const titleColor = n.type === 'new_product' ? '#00b0ff' : '#00e676';
+                    <button class="btn btn-soft btn-sm" onclick="window.markNotifAsRead('${n.id}')">
+                        <i class="fas fa-check text-success me-1"></i>Mark read
+                    </button>` : '';
 
                 return `
-                    <div class="list-group-item text-white border-secondary p-3 mb-2 rounded shadow-sm ${isUnread ? 'border-start border-4 border-warning' : ''}" style="background-color: #2b2f33 !important;">
-                        <div class="d-flex justify-content-between align-items-center mb-1 flex-wrap gap-1">
+                    <div class="notif-item ${isUnread ? 'unread' : ''}">
+                        <div class="d-flex justify-content-between align-items-start flex-wrap gap-1">
                             <div class="d-flex align-items-center gap-2">
-                                ${isUnread ? '<span class="badge font-monospace fw-bold" style="font-size: 10px; background-color: #ffc107 !important; color: #000 !important;">NEW</span>' : ''}
-                                <h6 class="mb-0 fw-bold" style="color: ${titleColor} !important; font-size: 0.98rem; text-shadow: 0 0 1px rgba(0,0,0,0.5);">
-                                    ${n.title || 'System Notification'}
-                                </h6>
+                                ${isUnread ? '<span class="badge" style="background:var(--brand)">NEW</span>' : ''}
+                                <h6 class="notif-title">${n.title || 'System Notification'}</h6>
                             </div>
-                            <small class="text-white opacity-90 fw-bold" style="font-size: 0.82rem;">${timeStr}</small>
+                            <span class="notif-time">${timeStr}</span>
                         </div>
-                        <p class="mb-2 text-white small fs-6" style="color: #ffffff !important; font-size: 0.9rem;">${n.message || ''}</p>
-                        <div class="p-2 rounded border border-secondary mb-2 font-monospace small" style="background-color: #1a1d20 !important;">
-                            <div class="d-flex justify-content-between flex-wrap gap-2 text-white">
-                                <span>Stock Before: <strong class="fw-bold fs-6" style="color: #ffb300 !important;">${window.toMixedFraction(prevStock)}</strong></span>
-                                <span>Quantity Added: <strong class="fw-bold fs-6" style="color: #00e676 !important;">+${window.toMixedFraction(qtyAdded)}</strong></span>
-                                <span>Total Stock After: <strong class="fw-bold fs-6" style="color: #00e5ff !important;">${window.toMixedFraction(aftStock)}</strong></span>
-                            </div>
+                        <p class="mb-0 mt-2 small text-secondary">${n.message || ''}</p>
+                        <div class="notif-stats">
+                            <div><span>Before</span><strong>${window.toMixedFraction(prevStock)}</strong></div>
+                            <div><span>Change</span><strong class="${qtyClass}">${qtySign}${window.toMixedFraction(qtyAdded)}</strong></div>
+                            <div><span>After</span><strong>${window.toMixedFraction(aftStock)}</strong></div>
                         </div>
                         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                            <span class="badge bg-secondary text-white border border-secondary px-2 py-1" style="font-size: 0.8rem;">
-                                Product: ${n.productName || 'N/A'}
-                            </span>
+                            <span class="badge text-bg-light border">${n.productName || 'N/A'}</span>
                             <div class="d-flex align-items-center gap-1">
                                 ${markReadBtn}
                                 ${deleteBtn}
-                                <button class="btn btn-xs btn-outline-success py-1 px-2 text-success fw-bold" style="font-size: 11px; border-color: #00e676;" onclick="window.markNotifAsRead('${n.id}'); if(typeof downloadRestocksPdfBtn !== 'undefined' && downloadRestocksPdfBtn) downloadRestocksPdfBtn.click(); else window.downloadSingleTablePdf('restock_table_1', 'Restock History', 'Restock_Report');">
-                                    <i class="fas fa-file-pdf me-1"></i> PDF
+                                <button class="btn btn-soft btn-sm" onclick="window.markNotifAsRead('${n.id}'); if(typeof downloadRestocksPdfBtn !== 'undefined' && downloadRestocksPdfBtn) downloadRestocksPdfBtn.click(); else window.downloadSingleTablePdf('restock_table_1', 'Restock History', 'Restock_Report');">
+                                    <i class="fas fa-file-pdf text-danger me-1"></i>PDF
                                 </button>
                             </div>
                         </div>
@@ -1653,7 +1772,7 @@ window.db.collection("notifications").orderBy("timestamp", "desc").limit(50).onS
 window.openNotificationsModal = () => {
     window.refreshNotificationUI();
     const modalEl = document.getElementById("notificationsModal");
-    if (modalEl) new bootstrap.Modal(modalEl).show();
+    if (modalEl) bootstrap.Modal.getOrCreateInstance(modalEl).show();
 };
 
 /**
@@ -2068,11 +2187,25 @@ const saveCustomerBtn = document.getElementById("saveCustomerBtn");
 let selectedProduct = null;
 let cart = [];
 
+window.openCustomerModal = () => {
+    if (custName) custName.value = "";
+    if (custPhone) custPhone.value = "";
+    bootstrap.Modal.getOrCreateInstance(document.getElementById("customerModal")).show();
+};
+
 if (addCustomerBtn) {
     addCustomerBtn.onclick = async () => {
-        if (!custName || !custPhone || !custName.value || !custPhone.value) return;
-        await window.db.collection("customers").add({ name: custName.value, phone: custPhone.value });
-        custName.value = custPhone.value = "";
+        if (!custName || !custPhone || !custName.value.trim() || !custPhone.value.trim()) {
+            return Swal.fire("Missing Info", "Enter both the customer's name and phone number.", "warning");
+        }
+        try {
+            await window.db.collection("customers").add({ name: custName.value.trim(), phone: custPhone.value.trim() });
+            custName.value = custPhone.value = "";
+            hideModalById("customerModal");
+            Swal.fire({ icon: "success", title: "Customer saved", timer: 1200, showConfirmButton: false });
+        } catch (e) {
+            Swal.fire("Error", "Could not save customer: " + e.message, "error");
+        }
     };
 }
 
@@ -2085,10 +2218,10 @@ if (customersTable && posCustomer) {
             const c = doc.data();
             let actions = "";
             if (isAdmin()) {
-                actions = `<button class="btn btn-sm btn-outline-danger delCustBtn" data-id="${doc.id}"><i class="fas fa-trash-alt me-1"></i>Delete</button>`;
+                actions = `<button class="btn btn-sm btn-soft delCustBtn" data-id="${doc.id}" title="Delete customer"><i class="fas fa-trash-can text-danger"></i></button>`;
             }
             rowsHTML += `<tr>
-                <td>${c.name}</td><td>${c.phone}</td><td>${actions}</td>
+                <td data-label="Name" class="fw-semibold">${c.name}</td><td data-label="Phone">${c.phone || ''}</td><td class="text-end">${actions}</td>
             </tr>`;
 
             const option = document.createElement("option");
@@ -2097,7 +2230,7 @@ if (customersTable && posCustomer) {
             posCustomer.appendChild(option);
         });
 
-        customersTable.innerHTML = rowsHTML || `<tr><td colspan="3" class="text-center text-muted py-3">No customers registered yet.</td></tr>`;
+        customersTable.innerHTML = rowsHTML || `<tr><td colspan="3"><div class="empty-state"><i class="fas fa-users"></i>No customers registered yet.</div></td></tr>`;
 
         if (isAdmin()) {
             document.querySelectorAll(".delCustBtn").forEach(btn => {
@@ -2129,14 +2262,25 @@ function renderCart() {
     cartList.innerHTML = "";
     let runningTotal = 0;
 
+    if (cart.length === 0) {
+        cartList.innerHTML = `<li class="empty-state list-unstyled"><i class="fas fa-basket-shopping"></i>Your cart is empty. Search a product above to add it.</li>`;
+    }
+
     cart.forEach((c, i) => {
         runningTotal += (c.price * c.qty);
         const li = document.createElement("li");
-        li.className = "list-group-item d-flex justify-content-between align-items-center";
-        li.textContent = `${c.name} x${window.toMixedFraction(c.qty)} = KSh ${(c.price * c.qty).toFixed(2)}`;
+        li.className = "list-group-item d-flex justify-content-between align-items-center gap-3";
+        li.innerHTML = `
+            <div class="me-auto">
+                <div class="cart-line-name"></div>
+                <div class="cart-line-meta">${window.toMixedFraction(c.qty)} × KSh ${Number(c.price).toLocaleString()}</div>
+            </div>
+            <div class="cart-line-total">KSh ${(c.price * c.qty).toFixed(2)}</div>`;
+        li.querySelector(".cart-line-name").textContent = c.name;
         const rmBtn = document.createElement("button");
-        rmBtn.className = "btn btn-sm btn-danger";
-        rmBtn.textContent = "x";
+        rmBtn.className = "btn btn-soft btn-sm btn-icon";
+        rmBtn.title = "Remove item";
+        rmBtn.innerHTML = `<i class="fas fa-xmark text-danger"></i>`;
         rmBtn.onclick = () => { cart.splice(i, 1); renderCart(); };
         li.appendChild(rmBtn);
         cartList.appendChild(li);
@@ -2156,8 +2300,8 @@ if (productSearch && productResults) {
             const isOutOfStock = parseFloat(p.stock) <= 0;
             return `
                 <a class="dropdown-item ${isOutOfStock ? 'text-muted' : ''}" href="#" 
-                   onclick="event.preventDefault(); ${isOutOfStock ? "alert('Item is out of stock!')" : `window.selectProd('${m.id}', '${p.name.replace(/'/g, "\\'")}', ${p.price})`}">
-                    ${p.name} - <strong>KSh ${p.price}</strong> ${isOutOfStock ? "(Out of Stock)" : ""}
+                   onclick="event.preventDefault(); ${isOutOfStock ? "Swal.fire('Out of Stock', 'This item is out of stock.', 'warning')" : `window.selectProd('${m.id}', '${p.name.replace(/'/g, "\\'")}', ${p.price})`}">
+                    ${p.name} - <strong>KSh ${p.price}</strong> ${isOutOfStock ? '<span class="low-stock ms-1">Out of Stock</span>' : ""}
                 </a>
             `;
         }).join('');
@@ -2180,7 +2324,7 @@ if (addToCartBtn) {
             targetDoc = window.productsCache.find(p => p.id === posProductEl.value);
         }
 
-        if (!targetDoc) return alert("Please select a product");
+        if (!targetDoc) return Swal.fire("No Product Selected", "Search and pick a product first.", "warning");
         const prodData = targetDoc.data();
         const prodId = targetDoc.id;
 
@@ -2197,9 +2341,9 @@ if (addToCartBtn) {
         const currentStock = parseFloat(prodData.stock) || 0;
         const requestedQty = parseQty(posQty.value);
 
-        if (isNaN(requestedQty) || requestedQty <= 0) return alert("Invalid quantity");
-        if (currentStock <= 0) return alert(`Sorry, ${prodData.name} is out of stock!`);
-        if (requestedQty > currentStock) return alert(`Insufficient stock! Only ${currentStock} available.`);
+        if (isNaN(requestedQty) || requestedQty <= 0) return Swal.fire("Invalid Quantity", "Enter a quantity such as 1 or 1/2.", "warning");
+        if (currentStock <= 0) return Swal.fire("Out of Stock", `Sorry, ${prodData.name} is out of stock.`, "warning");
+        if (requestedQty > currentStock) return Swal.fire("Insufficient Stock", `Only ${window.toMixedFraction(currentStock)} available.`, "warning");
 
         cart.push({
             id: prodId,
@@ -2217,6 +2361,7 @@ if (addToCartBtn) {
         selectedProduct = null;
         if (productSearch) productSearch.value = "";
         if (posQty) posQty.value = "1";
+        if (productSearch) productSearch.focus();
     };
 }
 
@@ -2224,7 +2369,7 @@ if (saveCustomerBtn) {
     saveCustomerBtn.onclick = async () => {
         const name = document.getElementById("newCustName")?.value;
         const phone = document.getElementById("newCustPhone")?.value;
-        if (!name) return alert("Enter a customer name");
+        if (!name) return Swal.fire("Missing Name", "Enter a customer name.", "warning");
         try {
             const docRef = await window.db.collection("customers").add({ name, phone });
             const select = document.getElementById("posCustomer");
@@ -2237,12 +2382,15 @@ if (saveCustomerBtn) {
             }
             const modalEl = document.getElementById('addCustomerModal');
             if (modalEl) bootstrap.Modal.getInstance(modalEl).hide();
-            alert("Customer saved!");
-        } catch (e) { alert("Error saving customer: " + e.message); }
+            document.getElementById("newCustName").value = "";
+            document.getElementById("newCustPhone").value = "";
+            Swal.fire({ icon: "success", title: "Customer saved", timer: 1200, showConfirmButton: false });
+        } catch (e) { Swal.fire("Error", "Error saving customer: " + e.message, "error"); }
     };
 }
 
 if (clearCartBtn) clearCartBtn.onclick = () => { cart = []; renderCart(); };
+renderCart();
 
 if (checkoutBtn) {
     checkoutBtn.onclick = () => {
@@ -2264,12 +2412,12 @@ if (checkoutBtn) {
 
         if (modalCartSummary) {
             modalCartSummary.innerHTML = cart.map(i => `
-                <div class="d-flex justify-content-between align-items-center py-1 border-bottom border-secondary">
+                <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
                     <div>
                         <strong>${i.name}</strong>
-                        <span class="badge bg-secondary ms-1">x ${window.toMixedFraction(i.qty)}</span>
+                        <span class="badge text-bg-light border ms-1">× ${window.toMixedFraction(i.qty)}</span>
                     </div>
-                    <span class="fw-bold text-warning">KSh ${(i.price * i.qty).toFixed(2)}</span>
+                    <span class="fw-bold">KSh ${(i.price * i.qty).toFixed(2)}</span>
                 </div>
             `).join('');
         }
@@ -3481,7 +3629,7 @@ const downloadAllBtn = document.getElementById("downloadAllPDF");
 if (downloadAllBtn) {
     downloadAllBtn.onclick = () => {
         const salesList = window.allSales || [];
-        if (salesList.length === 0) return alert("No sales data available.");
+        if (salesList.length === 0) return Swal.fire("No Data", "No sales data available.", "info");
 
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF();
@@ -3548,7 +3696,7 @@ window.openProductSelector = () => {
     list.innerHTML = rowsHTML || `<tr><td colspan="3" class="text-center text-muted py-3">No products available in stock.</td></tr>`;
 
     const modalEl = document.getElementById("productSelectorModal");
-    if (modalEl) new bootstrap.Modal(modalEl).show();
+    if (modalEl) bootstrap.Modal.getOrCreateInstance(modalEl).show();
 };
 
 const selectAllEl = document.getElementById("selectAll");
@@ -3705,6 +3853,25 @@ if (typeof window.editStaffId === 'undefined') {
     window.editStaffId = null;
 }
 
+/**
+ * Opens the staff modal in "add" mode with a clean form
+ */
+window.openStaffModal = () => {
+    if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
+    window.editStaffId = null;
+    ["staffName", "staffEmail", "staffPassword"].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = "";
+    });
+    const emailEl = document.getElementById("staffEmail");
+    if (emailEl) emailEl.disabled = false;
+    const roleEl = document.getElementById("staffRole");
+    if (roleEl) roleEl.value = "staff";
+    document.getElementById("staffModalTitle").textContent = "Add Staff Member";
+    document.getElementById("addStaffBtn").textContent = "Save";
+    bootstrap.Modal.getOrCreateInstance(document.getElementById("staffModal")).show();
+};
+
 window.saveStaffMember = async () => {
     const staffEmailInput = document.getElementById("staffEmail");
     const staffPasswordInput = document.getElementById("staffPassword");
@@ -3752,6 +3919,7 @@ window.saveStaffMember = async () => {
         staffPasswordInput.value = "";
         staffNameInput.value = "";
         staffEmailInput.disabled = false;
+        hideModalById("staffModal");
 
     } catch (error) {
         console.error("Save Staff Error:", error);
@@ -3780,20 +3948,20 @@ window.db.collection("users").onSnapshot(snap => {
 
         rowsHTML += `
             <tr>
-                <td><strong>${staffName}</strong></td>
-                <td>${staffEmail}</td>
-                <td><span class="badge ${staffRole === 'admin' ? 'bg-danger' : 'bg-primary'}">${staffRole.toUpperCase()}</span></td>
-                <td>
-                    <span class="badge ${isBlocked ? 'bg-dark' : 'bg-success'}">
+                <td data-label="Employee" class="fw-semibold">${staffName}</td>
+                <td data-label="Email" class="text-muted">${staffEmail}</td>
+                <td data-label="Role"><span class="badge rounded-pill ${staffRole === 'admin' ? 'text-bg-warning' : 'text-bg-primary'}">${staffRole.toUpperCase()}</span></td>
+                <td data-label="Status">
+                    <span class="badge rounded-pill ${isBlocked ? 'text-bg-dark' : 'text-bg-success'}">
                         ${isBlocked ? 'BLOCKED' : 'ACTIVE'}
                     </span>
                 </td>
-                <td>
-                    <button class="btn btn-sm btn-outline-warning me-1" onclick="window.prepareStaffEdit('${doc.id}')">Edit</button>
-                    <button class="btn btn-sm ${isBlocked ? 'btn-outline-success' : 'btn-outline-dark'} me-1" onclick="window.toggleStaffAccess('${doc.id}', '${staffStatus}')">
-                        ${isBlocked ? 'Unblock' : 'Block'}
+                <td class="text-end text-nowrap">
+                    <button class="btn btn-sm btn-soft" title="Edit" onclick="window.prepareStaffEdit('${doc.id}')"><i class="fas fa-pen text-primary"></i></button>
+                    <button class="btn btn-sm btn-soft" title="${isBlocked ? 'Unblock' : 'Block'}" onclick="window.toggleStaffAccess('${doc.id}', '${staffStatus}')">
+                        <i class="fas ${isBlocked ? 'fa-lock-open text-success' : 'fa-ban text-secondary'}"></i>
                     </button>
-                    <button class="btn btn-sm btn-outline-danger" onclick="window.deleteStaffUser('${doc.id}')">Delete</button>
+                    <button class="btn btn-sm btn-soft" title="Delete" onclick="window.deleteStaffUser('${doc.id}')"><i class="fas fa-trash-can text-danger"></i></button>
                 </td>
             </tr>
         `;
@@ -3826,6 +3994,8 @@ window.prepareStaffEdit = async (docId) => {
 
         const addStaffBtn = document.getElementById("addStaffBtn");
         if (addStaffBtn) addStaffBtn.textContent = "Update Details";
+        document.getElementById("staffModalTitle").textContent = "Edit Staff Member";
+        bootstrap.Modal.getOrCreateInstance(document.getElementById("staffModal")).show();
     } catch (err) {
         console.error("Error preparing staff edit:", err);
     }
@@ -3865,6 +4035,71 @@ window.deleteStaffUser = async (docId) => {
 /* ==========================================================================
    SECTION 13: UI NAVIGATION & SCROLL HELPERS
    ========================================================================== */
+
+/**
+ * New-version notifier: compares the server's copy of main.js (ETag / Last-Modified)
+ * with the one seen at page load and invites the user to refresh when it changes.
+ */
+(function setupUpdateChecker() {
+    let baseline = null;
+    let notified = false;
+
+    const fingerprint = async () => {
+        const res = await fetch(`main.js?_=${Date.now()}`, { method: "HEAD", cache: "no-store" });
+        if (!res.ok) return null;
+        return (res.headers.get("etag") || "") + "|" + (res.headers.get("last-modified") || "") + "|" + (res.headers.get("content-length") || "");
+    };
+
+    const showBanner = () => {
+        if (notified) return;
+        notified = true;
+        const bar = document.createElement("div");
+        bar.style.cssText = "position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:3000;max-width:94vw;" +
+            "background:#2b1d0e;color:#fff;border:1px solid #d4a373;border-radius:14px;padding:12px 14px;" +
+            "box-shadow:0 12px 40px rgba(0,0,0,.5);display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:center";
+        bar.innerHTML = `
+            <span><i class="fas fa-circle-arrow-up me-2" style="color:#d4a373"></i><strong>New update available.</strong> Refresh to get the latest version.</span>
+            <span class="d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-custom" id="updateNowBtn">Refresh now</button>
+                <button type="button" class="btn btn-sm btn-soft" id="updateLaterBtn">Later</button>
+            </span>`;
+        document.body.appendChild(bar);
+        bar.querySelector("#updateNowBtn").onclick = () => location.reload();
+        bar.querySelector("#updateLaterBtn").onclick = () => { bar.remove(); notified = false; baseline = null; };
+    };
+
+    const check = async () => {
+        try {
+            const fp = await fingerprint();
+            if (!fp) return;
+            if (baseline === null) { baseline = fp; return; }
+            if (fp !== baseline) showBanner();
+        } catch (e) { /* offline or blocked: try again later */ }
+    };
+
+    check();
+    setInterval(check, 5 * 60 * 1000);
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) check(); });
+})();
+
+/**
+ * Light / dark theme toggle (dark is the default, choice is remembered)
+ */
+function applyTheme(theme) {
+    document.documentElement.setAttribute("data-theme", theme);
+    document.documentElement.setAttribute("data-bs-theme", theme);
+    document.querySelectorAll(".theme-icon").forEach(icon => {
+        icon.className = `fas ${theme === "dark" ? "fa-sun" : "fa-moon"} theme-icon`;
+    });
+}
+
+window.toggleTheme = () => {
+    const next = document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light";
+    try { localStorage.setItem("madollar_theme", next); } catch (e) { }
+    applyTheme(next);
+};
+
+applyTheme(document.documentElement.getAttribute("data-theme") || "dark");
 
 document.addEventListener("DOMContentLoaded", function () {
     const backToTopBtn = document.getElementById("backToTopBtn");

@@ -1,761 +1,1419 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-bs-theme="dark" data-theme="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MADOLLAR  Inventory System</title>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
-  <link rel="icon" href="img/logo.jpeg" type="image/jpg">
+<title>MADOLLAR Inventory System</title>
+<script>
+  // Apply saved theme before first paint (dark is the default)
+  (function () {
+    var t = 'dark';
+    try { t = localStorage.getItem('madollar_theme') || 'dark'; } catch (e) {}
+    document.documentElement.setAttribute('data-theme', t);
+    document.documentElement.setAttribute('data-bs-theme', t);
+  })();
+</script>
+<link rel="icon" href="img/logo.jpeg" type="image/jpeg">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
 <style>
-  /* Base Theme */
-  body { background: #1c1c1c; color: #f8f9fa; font-family: sans-serif; }
-  .navbar { background: #2b1d0e; }
-  .navbar-brand { font-weight: bold; color: #f8f9fa !important; }
-  .card { background: #2a2a2a; border: none; color: #fff; border-radius: 8px; }
-  
-  /* Tabs */
-  .nav-tabs .nav-link { color: #f8f9fa; border: none; }
-  .nav-tabs .nav-link.active { background: #d4a373; color: #000; font-weight: bold; }
-  
-  /* Buttons */
-  .btn-custom { background: #d4a373; border: none; color: #000; }
-  .btn-custom:hover { background: #c48c59; color: #fff; }
-  
-  /* Table & UI Elements */
-  .table { color: #fff; }
-  .table-responsive { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  .low-stock { background:#ff6b6b; color:#000; padding:2px 6px; border-radius:6px; font-weight:600; font-size:12px; }
-  .small-muted { font-size: 0.85rem; color: #bdbdbd; margin-right: 8px; }
+  /* ==========================================================================
+     DESIGN TOKENS
+     ========================================================================== */
+  :root {
+    /* DARK (default) - original Madollar palette */
+    --bg: #1c1c1c;
+    --surface: #2a2a2a;
+    --surface-2: #232323;
+    --ink: #f8f9fa;
+    --ink-2: #dcdfe3;
+    --muted: #b5b9be;
+    --line: #3d3d3d;
 
-  /* Mobile Optimization */
-  @media (max-width: 768px) {
-    .btn, .form-control, .form-select { min-height: 44px; } /* Finger-friendly size */
-    .modal-dialog { margin: 10px; max-width: none; }
-    h5 { font-size: 1.1rem; }
-    .col-md-4, .col-md-5, .col-md-2 { margin-bottom: 10px; }
+    --brand: #d4a373;
+    --brand-dark: #c48c59;
+    --brand-soft: rgba(212, 163, 115, .16);
+    --brand-ink: #1a1208;
+    --nav: #2b1d0e;
+    --nav-2: #36250f;
+
+    --success: #22c55e;
+    --danger: #ef4444;
+    --info: #3b82f6;
+
+    --row-hover: #323029;
+    --row-alt: #262626;
+    --danger-bg: rgba(239, 68, 68, .14);
+    --unread-bg: rgba(212, 163, 115, .1);
+    --track: #3a3a3a;
+    --pill-ok-bg: rgba(34, 197, 94, .18);
+    --pill-ok-ink: #86efac;
+    --pill-bad-bg: rgba(239, 68, 68, .2);
+    --pill-bad-ink: #fca5a5;
+    --tab-active-bg: #d4a373;
+    --tab-active-ink: #000;
+
+    --ic-green-bg: rgba(34, 197, 94, .18);  --ic-green: #4ade80;
+    --ic-blue-bg: rgba(59, 130, 246, .2);   --ic-blue: #7db3ff;
+    --ic-violet-bg: rgba(139, 92, 246, .22); --ic-violet: #b9a2ff;
+    --ic-rose-bg: rgba(244, 63, 94, .2);    --ic-rose: #fda4af;
+
+    --radius: 14px;
+    --radius-sm: 10px;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, .35);
+    --shadow-md: 0 8px 24px rgba(0, 0, 0, .35);
+    --shadow-lg: 0 24px 60px rgba(0, 0, 0, .6);
+
+    --bs-body-font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --bs-body-bg: var(--bg);
+    --bs-body-color: var(--ink);
+    --bs-border-color: var(--line);
+    --bs-border-radius: var(--radius-sm);
   }
 
-  /* Search & Results Dropdown */
-  #productResults { 
-    max-height: 300px; 
-    overflow-y: auto; 
-    width: 100% !important; 
+  /* LIGHT (toggle) */
+  html[data-theme="light"] {
+    --bg: #f4f5f7;
+    --surface: #ffffff;
+    --surface-2: #f9fafb;
+    --ink: #151a23;
+    --ink-2: #374151;
+    --muted: #6b7280;
+    --line: #e5e7eb;
+
+    --brand: #c8893b;
+    --brand-dark: #a86d27;
+    --brand-soft: #fbf1e2;
+    --brand-ink: #ffffff;
+
+    --row-hover: #faf7f2;
+    --row-alt: #fcfcfd;
+    --danger-bg: #fff1f1;
+    --unread-bg: #fffaf2;
+    --track: #eceff3;
+    --pill-ok-bg: #dcfce7;
+    --pill-ok-ink: #166534;
+    --pill-bad-bg: #fee2e2;
+    --pill-bad-ink: #991b1b;
+    --tab-active-bg: #2b1d0e;
+    --tab-active-ink: #ffffff;
+
+    --ic-green-bg: #dcfce7;  --ic-green: #15803d;
+    --ic-blue-bg: #dbeafe;   --ic-blue: #1d4ed8;
+    --ic-violet-bg: #ede9fe; --ic-violet: #6d28d9;
+    --ic-rose-bg: #ffe4e6;   --ic-rose: #be123c;
+
+    --shadow-sm: 0 1px 2px rgba(16, 24, 40, .06), 0 1px 3px rgba(16, 24, 40, .06);
+    --shadow-md: 0 8px 24px rgba(16, 24, 40, .08);
+    --shadow-lg: 0 24px 60px rgba(16, 24, 40, .22);
   }
 
-  /* Modal Styling */
-  .modal-content { background-color: #212529 !important; color: #f8f9fa !important; border: 1px solid #444; }
-  .modal-header, .modal-footer { border-color: #444; }
-  .btn-close { filter: invert(1) grayscale(100%) brightness(200%); }
+  html { scroll-behavior: smooth; }
+  /* Remove the mobile tap delay and highlight so buttons react instantly */
+  a, button, .btn, .nav-link, [role="button"], input, select, label { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--bs-body-font-family);
+    font-size: .94rem;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3, h4, h5, h6 { letter-spacing: -.01em; font-weight: 650; }
+  .text-muted { color: var(--muted) !important; }
+  .small-muted { font-size: .78rem; color: var(--muted); font-weight: 500; letter-spacing: .01em; }
 
-  /* Low Stock Wrapper */
+  /* ==========================================================================
+     BUTTONS
+     ========================================================================== */
+  .btn { font-weight: 550; border-radius: var(--radius-sm); padding: .5rem 1rem; transition: background-color .15s ease, border-color .15s ease, box-shadow .15s ease, transform .15s ease; }
+  .btn-sm { padding: .32rem .7rem; font-size: .8rem; border-radius: 8px; }
+  .btn-custom {
+    background: linear-gradient(135deg, var(--brand), var(--brand-dark));
+    border: 0; color: var(--brand-ink);
+    box-shadow: 0 4px 12px rgba(200, 137, 59, .35);
+  }
+  .btn-custom:hover, .btn-custom:focus { color: var(--brand-ink); transform: translateY(-1px); box-shadow: 0 6px 16px rgba(200, 137, 59, .45); }
+  .btn-soft {
+    background: var(--surface); border: 1px solid var(--line); color: var(--ink-2);
+  }
+  .btn-soft:hover { background: var(--row-hover); border-color: var(--brand); color: var(--ink); }
+  .btn-icon { width: 34px; height: 34px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+  .btn-xs { padding: .2rem .5rem; font-size: .75rem; }
+
+  .form-control, .form-select {
+    border-radius: var(--radius-sm); border-color: var(--line); padding: .6rem .85rem; background-color: var(--surface-2); color: var(--ink);
+  }
+  .form-control::placeholder { color: var(--muted); opacity: .75; }
+  .form-control:focus, .form-select:focus {
+    border-color: var(--brand); box-shadow: 0 0 0 .22rem rgba(200, 137, 59, .18);
+  }
+  .form-label { font-size: .8rem; font-weight: 600; color: var(--ink-2); margin-bottom: .35rem; }
+  .input-group-text { background: var(--surface-2); border-color: var(--line); color: var(--muted); }
+
+  /* ==========================================================================
+     LOGIN
+     ========================================================================== */
+  #loginSection {
+    min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px 16px;
+    background:
+      radial-gradient(900px 500px at 10% -10%, rgba(200, 137, 59, .35), transparent 60%),
+      radial-gradient(700px 500px at 100% 110%, rgba(200, 137, 59, .25), transparent 60%),
+      linear-gradient(160deg, var(--nav), var(--nav-2));
+  }
+  #loginSection.d-none { display: none !important; }
+  .login-card {
+    width: 100%; max-width: 420px; background: var(--surface); border-radius: 20px;
+    padding: 32px 28px; box-shadow: var(--shadow-lg);
+  }
+  .login-logo { height: 110px; width: auto; max-width: 100%; object-fit: contain; border-radius: 8px; }
+  .portal-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; background: var(--bg); padding: 4px; border-radius: 12px; }
+  .portal-switch button {
+    border: 0; background: transparent; padding: .55rem; border-radius: 9px; font-weight: 600; color: var(--muted); transition: all .18s;
+  }
+  .portal-switch button.active { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-sm); }
+  .portal-switch button.active i { color: var(--brand); }
+
+  /* ==========================================================================
+     TOP BAR
+     ========================================================================== */
+  .topbar {
+    background: linear-gradient(180deg, var(--nav), var(--nav-2));
+    color: #fff; position: sticky; top: 0; z-index: 1030;
+    box-shadow: 0 2px 14px rgba(0, 0, 0, .25);
+  }
+  .topbar-inner { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; flex-wrap: wrap; }
+  .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .brand img { height: 56px; width: auto; max-width: 140px; object-fit: contain; border-radius: 6px; }
+  .brand-name { font-weight: 700; letter-spacing: .04em; font-size: 1rem; line-height: 1.1; }
+  .brand-sub { font-size: .7rem; color: rgba(255, 255, 255, .55); letter-spacing: .08em; text-transform: uppercase; }
+  .topbar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .topbar .btn-top {
+    background: rgba(255, 255, 255, .08); color: #fff; border: 1px solid rgba(255, 255, 255, .12);
+    padding: .4rem .8rem; font-size: .82rem; position: relative;
+  }
+  .topbar .btn-top:hover { background: rgba(255, 255, 255, .16); color: #fff; }
+  #notifBadge { font-size: .65rem; }
   #lowStockWrapper {
-    padding: 5px 10px;
-    border-radius: 6px;
-    transition: background-color 0.2s ease;
-    display: inline-flex;
-    align-items: center;
-    cursor: pointer;
-    background-color: #2b2b2b;
-    border: 1px solid #444;
+    display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+    background: rgba(220, 38, 38, .16); border: 1px solid rgba(248, 113, 113, .4); color: #fecaca;
+    padding: .38rem .75rem; border-radius: var(--radius-sm); font-size: .82rem; font-weight: 550;
+    transition: background .18s;
   }
-  #lowStockWrapper:hover { background-color: #3d3d3d; }
-  .card {
-    border-radius: 12px;
-    transition: transform 0.2s;
-}
+  #lowStockWrapper:hover { background: rgba(220, 38, 38, .28); }
+  #lowStockBadge { background: var(--danger); color: #fff; border-radius: 999px; padding: 0 .5rem; font-size: .75rem; font-weight: 700; min-width: 22px; text-align: center; }
+  #roleBadge { background: var(--brand) !important; color: #fff !important; letter-spacing: .08em; font-size: .68rem; padding: .45em .8em; border-radius: 999px; }
 
-.card .text-muted {
-    color: #bdc3c7 !important; /* Light grey for labels */
-}
+  /* ==========================================================================
+     STAT CARDS
+     ========================================================================== */
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-sm); color: var(--ink); }
+  .stat-card { padding: 18px; height: 100%; position: relative; overflow: hidden; }
+  .stat-icon {
+    width: 40px; height: 40px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center;
+    font-size: 1rem; flex-shrink: 0;
+  }
+  .stat-label { font-size: .76rem; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
+  .stat-value { font-size: 1.55rem; font-weight: 700; letter-spacing: -.02em; margin: 2px 0 0; line-height: 1.2; }
+  .ic-green { background: var(--ic-green-bg); color: var(--ic-green); }
+  .ic-blue { background: var(--ic-blue-bg); color: var(--ic-blue); }
+  .ic-amber { background: var(--brand-soft); color: var(--brand); }
+  .ic-violet { background: var(--ic-violet-bg); color: var(--ic-violet); }
+  .ic-rose { background: var(--ic-rose-bg); color: var(--ic-rose); }
+  .stat-divider { border-top: 1px dashed var(--line); margin-top: 12px; padding-top: 10px; }
+  .progress { height: 10px; border-radius: 999px; background: var(--track); }
+  .progress-bar { border-radius: 999px; font-size: 0; }
 
-.card h5 {
-    color: #ffffff !important; /* Bright white for sales figures */
-}
+  /* ==========================================================================
+     TABS
+     ========================================================================== */
+  .tabs-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; margin-bottom: 18px; }
+  .tabs-scroll::-webkit-scrollbar { display: none; }
+  .nav-tabs {
+    border: 0; gap: 6px; flex-wrap: nowrap; background: var(--surface); padding: 6px;
+    border-radius: 14px; border: 1px solid var(--line); box-shadow: var(--shadow-sm); width: max-content; min-width: 100%;
+  }
+  .nav-tabs .nav-link {
+    border: 0; border-radius: 10px; color: var(--muted); font-weight: 600; font-size: .86rem;
+    padding: .55rem .95rem; white-space: nowrap; transition: all .16s;
+  }
+  .nav-tabs .nav-link i { margin-right: 6px; opacity: .8; }
+  .nav-tabs .nav-link:hover { color: var(--ink); background: var(--bg); }
+  .nav-tabs .nav-link.active { background: var(--tab-active-bg); color: var(--tab-active-ink); }
+  .nav-tabs .nav-link.active i { color: inherit; opacity: 1; }
 
-/* Ensure the primary color is bright enough to show on dark backgrounds */
-.text-primary {
-    color: #5dade2 !important; /* A brighter blue that pops on dark backgrounds */
+  /* ==========================================================================
+     SECTIONS / TABLES
+     ========================================================================== */
+  .section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+  .section-title { font-size: 1.15rem; margin: 0; font-weight: 700; }
+  .section-sub { color: var(--muted); font-size: .82rem; margin: 2px 0 0; }
+  .panel { padding: 18px; }
 
-}
-/* Stylish, compact selection button */
-.btn-outline-light {
-    border: 1px solid #495057 !important;
-    color: #ced4da !important;
-    background: transparent !important;
-    padding: 6px 12px !important;
-    font-size: 0.85rem !important;
-    border-radius: 6px !important;
-    transition: all 0.3s ease !important;
-}
+  .table { --bs-table-bg: transparent; color: var(--ink); margin-bottom: 0; }
+  .table > :not(caption) > * > * { padding: .78rem .9rem; border-bottom-color: var(--line); vertical-align: middle; }
+  .table thead th {
+    font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 650;
+    background: var(--surface-2) !important; border-bottom: 1px solid var(--line); white-space: nowrap;
+  }
+  .table-hover > tbody > tr:hover > * { --bs-table-bg-state: var(--row-hover); }
+  .table-striped > tbody > tr:nth-of-type(odd) > * { --bs-table-bg-type: var(--row-alt); }
+  .table-danger > td, tr.table-danger > td { background: var(--danger-bg) !important; }
+  .table-responsive { border-radius: var(--radius-sm); }
+  .table-wrap { border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; background: var(--surface); }
+  .table-wrap .table-responsive { border-radius: 0; }
 
-.btn-outline-light:hover {
-    background: #d4a373 !important;
-    color: #000 !important;
-    border-color: #d4a373 !important;
-}
+  .search-box { position: relative; }
+  .search-box i { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+  .search-box .form-control { padding-left: 2.5rem; }
 
-/* Ensure the icon fits nicely */
-.gap-2 { gap: 0.5rem; }
-  /* Floating Back-to-Top Arrow Button */
-#backToTopBtn {
-  position: fixed;
-  bottom: 25px;
-  right: 25px;
-  z-index: 1050; /* Above table elements and overlays */
-  width: 48px;
-  height: 48px;
-  background-color: #d4a373; /* Custom Gold Accent */
-  color: #000000;
-  border: none;
-  border-radius: 50%;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.2rem;
-  cursor: pointer;
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 0.3s ease, visibility 0.3s ease, transform 0.2s ease, background-color 0.2s ease;
-}
+  .empty-state { text-align: center; color: var(--muted); padding: 36px 16px; }
+  .empty-state i { font-size: 2rem; color: #cbd5e1; display: block; margin-bottom: 8px; }
 
-#backToTopBtn:hover {
-  background-color: #c48c59;
-  color: #ffffff;
-  transform: translateY(-3px);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
-}
+  .low-stock { background: var(--pill-bad-bg); color: var(--pill-bad-ink); padding: 2px 8px; border-radius: 999px; font-weight: 600; font-size: 12px; }
+  .stock-pill { display: inline-block; min-width: 38px; text-align: center; padding: 2px 10px; border-radius: 999px; background: var(--pill-ok-bg); color: var(--pill-ok-ink); font-weight: 650; }
+  tr.table-danger .stock-pill { background: var(--pill-bad-bg); color: var(--pill-bad-ink); }
 
-/* Show button class when scrolling down */
-#backToTopBtn.show {
-  opacity: 1;
-  visibility: visible;
-}
+  /* ==========================================================================
+     POS
+     ========================================================================== */
+  #productResults {
+    max-height: 300px; overflow-y: auto; width: 100% !important;
+    border: 1px solid var(--line); border-radius: var(--radius-sm); box-shadow: var(--shadow-md); padding: 6px;
+  }
+  #productResults .dropdown-item { border-radius: 8px; padding: .55rem .75rem; white-space: normal; }
+  #productResults .dropdown-item:hover { background: var(--brand-soft); }
+
+  #cartList { border-radius: var(--radius-sm); gap: 8px; display: flex; flex-direction: column; }
+  #cartList .list-group-item {
+    border: 1px solid var(--line); border-radius: var(--radius-sm) !important; background: var(--surface-2); padding: .7rem .9rem;
+  }
+  .cart-line-name { font-weight: 600; }
+  .cart-line-meta { font-size: .78rem; color: var(--muted); }
+  .cart-line-total { font-weight: 700; color: var(--ink); }
+  .total-card {
+    background: linear-gradient(160deg, var(--nav), var(--nav-2)); color: #fff; border: 0; padding: 20px;
+    position: sticky; top: 92px;
+  }
+  .total-card .small-muted { color: rgba(255, 255, 255, .6); }
+  .total-card h2 { font-size: 2rem; font-weight: 700; margin: 4px 0 0; }
+
+  /* ==========================================================================
+     BADGES / PROFIT CARDS
+     ========================================================================== */
+  .profit-card { color: #fff; border: 0; padding: 20px; height: 100%; }
+  .profit-card.green { background: linear-gradient(135deg, #15803d, #16a34a); }
+  .profit-card.blue { background: linear-gradient(135deg, #1d4ed8, #2563eb); }
+  .profit-card h6 { font-size: .74rem; letter-spacing: .08em; opacity: .8; }
+
+  /* ==========================================================================
+     MODALS
+     ========================================================================== */
+  .modal-content {
+    background: var(--surface); color: var(--ink); border: 0; border-radius: 18px; box-shadow: var(--shadow-lg); overflow: hidden;
+  }
+  .modal-header { border-bottom: 1px solid var(--line); padding: 16px 22px; background: var(--surface); }
+  .modal-title { font-size: 1.05rem; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+  .modal-title .m-ico {
+    width: 34px; height: 34px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center;
+    background: var(--brand-soft); color: var(--brand-dark); font-size: .9rem;
+  }
+  .modal-body { padding: 22px; }
+  .modal-footer { border-top: 1px solid var(--line); padding: 14px 22px; background: var(--surface-2); gap: 8px; }
+  .modal-backdrop.show { opacity: .55; }
+  .modal.fade .modal-dialog { transform: translateY(10px); transition: transform .14s ease-out; }
+  .modal.fade { transition: opacity .12s linear; }
+  .modal.show .modal-dialog { transform: none; }
+
+  /* ==========================================================================
+     TOAST
+     ========================================================================== */
+  .toast-container { top: 50% !important; left: 50% !important; transform: translate(-50%, -50%) !important; width: 340px; max-width: 92vw; z-index: 2000; }
+  #liveToast { border-radius: 18px; box-shadow: var(--shadow-lg); background: var(--nav); color: #fff; border: 0; overflow: hidden; }
+  #liveToast .toast-header { background: transparent; color: rgba(255, 255, 255, .85); border-bottom: 1px solid rgba(255, 255, 255, .1); }
+  #liveToast .btn-close { filter: invert(1); }
+  .toast-body { padding: 24px; text-align: center; color: #fff; }
+  .checkmark-circle { width: 50px; height: 50px; margin: 0 auto 15px; border-radius: 50%; stroke: #34d399; stroke-width: 4; stroke-miterlimit: 10; fill: none; animation: scale .3s ease-in-out; display: block; }
+  .checkmark { transform-origin: 50% 50%; stroke-dasharray: 48; stroke-dashoffset: 48; animation: stroke .6s cubic-bezier(.65, 0, .45, 1) forwards .3s; }
+  @keyframes stroke { 100% { stroke-dashoffset: 0; } }
+  @keyframes scale { 0%, 100% { transform: none; } 50% { transform: scale3d(1.1, 1.1, 1); } }
+  .spinner-loader { width: 40px; height: 40px; border: 4px solid rgba(255, 255, 255, .15); border-top: 4px solid var(--brand); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 15px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ==========================================================================
+     SWEETALERT THEME
+     ========================================================================== */
+  .swal2-popup { border-radius: 18px !important; font-family: var(--bs-body-font-family) !important; padding: 1.6rem !important; }
+  .swal2-title { font-size: 1.25rem !important; font-weight: 700 !important; color: var(--ink) !important; }
+  .swal2-html-container { color: var(--ink-2) !important; font-size: .95rem !important; }
+  .swal2-styled { border-radius: 10px !important; font-weight: 600 !important; box-shadow: none !important; }
+  .swal2-styled.swal2-confirm { background: var(--brand-dark) !important; }
+  .swal2-styled.swal2-confirm:focus { box-shadow: 0 0 0 3px rgba(200, 137, 59, .35) !important; }
+
+  /* ==========================================================================
+     NOTIFICATIONS (rendered by main.js)
+     ========================================================================== */
+  .notif-item { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 14px; margin-bottom: 10px; background: var(--surface); }
+  .notif-item.unread { border-left: 4px solid var(--brand); background: var(--unread-bg); }
+  .notif-title { font-weight: 650; margin: 0; font-size: .95rem; }
+  .notif-time { font-size: .76rem; color: var(--muted); }
+  .notif-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0; }
+  .notif-stats > div { background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+  .notif-stats span { display: block; font-size: .68rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  .notif-stats strong { font-size: 1rem; }
+
+  /* ==========================================================================
+     BACK TO TOP
+     ========================================================================== */
+  #backToTopBtn {
+    position: fixed; bottom: 24px; right: 24px; z-index: 1050; width: 46px; height: 46px;
+    background: var(--nav); color: #fff; border: 0; border-radius: 50%; box-shadow: var(--shadow-md);
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+    opacity: 0; visibility: hidden; transition: opacity .25s, visibility .25s, transform .2s, background .2s;
+  }
+  #backToTopBtn:hover { background: var(--brand-dark); transform: translateY(-3px); }
+  #backToTopBtn.show { opacity: 1; visibility: visible; }
+
+  /* ==========================================================================
+     THEME-AWARE OVERRIDES (main.js renders Bootstrap light utility classes)
+     ========================================================================== */
+  .text-dark { color: var(--ink) !important; }
+  .text-secondary { color: var(--muted) !important; }
+  .bg-light, .bg-white, .table-light { background-color: var(--surface-2) !important; color: var(--ink) !important; }
+  .text-bg-light { background-color: var(--surface-2) !important; color: var(--ink) !important; }
+  .border { border-color: var(--line) !important; }
+  .table-warning, .table-warning > td { background-color: rgba(212, 163, 115, .2) !important; color: var(--ink) !important; }
+  .bg-primary-subtle { background-color: var(--ic-blue-bg) !important; }
+  .text-primary { color: var(--ic-blue) !important; }
+  .text-success { color: var(--ic-green) !important; }
+  .table-info, .table-primary { --bs-table-bg: var(--surface-2); color: var(--ink); }
+  .alert-info { background: var(--ic-blue-bg); color: var(--ink); border-color: var(--line); }
+  .dropdown-menu { background: var(--surface); color: var(--ink); }
+  .dropdown-item { color: var(--ink); }
+  .form-check-input { background-color: var(--surface-2); border-color: var(--line); }
+  .form-check-input:checked { background-color: var(--brand); border-color: var(--brand); }
+  .swal2-popup { background: var(--surface) !important; color: var(--ink) !important; }
+  .swal2-title, .swal2-html-container { color: var(--ink) !important; }
+  .swal2-styled.swal2-confirm { color: var(--brand-ink) !important; }
+
+  /* Theme toggle */
+  .theme-toggle {
+    width: 38px; height: 38px; padding: 0; display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 10px; border: 1px solid rgba(255, 255, 255, .15); background: rgba(255, 255, 255, .08); color: #fff; cursor: pointer; transition: background .18s;
+  }
+  .theme-toggle:hover { background: rgba(255, 255, 255, .18); }
+  .login-card { position: relative; }
+  .login-theme-toggle { position: absolute; top: 16px; right: 16px; background: var(--surface-2); color: var(--ink); border-color: var(--line); }
+
+  /* ==========================================================================
+     RESPONSIVE
+     ========================================================================== */
+  /* Compact table: same layout as desktop on phones, scrolls sideways, product name stays pinned */
+  .table-compact { min-width: 100%; }
+  .table-compact th:first-child, .table-compact td:first-child { position: sticky; left: 0; z-index: 2; }
+  .table-compact thead th:first-child { background-color: var(--surface-2) !important; }
+  .table-compact tbody tr > td:first-child { background-color: var(--surface) !important; background-image: none; box-shadow: 1px 0 0 var(--line); }
+  .table-compact tbody tr.table-danger > td:first-child { background-image: linear-gradient(var(--danger-bg), var(--danger-bg)) !important; }
+
+  /* Profit cards: never stretch to the taller sibling */
+  .profit-card { height: auto; }
+  #profitCardBreakdown { max-height: 260px; overflow-y: auto; padding-right: 4px; }
+  .profit-row-wrap { align-items: flex-start; }
+
+  .modal-footer { flex-wrap: wrap; }
+  .login-card, .card, .modal-content { min-width: 0; }
+  img { max-width: 100%; }
+
+  @media (max-width: 991.98px) {
+    .total-card { position: static; }
+    .container-xl { padding-left: 14px; padding-right: 14px; }
+  }
+
+  @media (max-width: 767.98px) {
+    body { font-size: .92rem; }
+    /* 16px inputs stop iOS from zooming on focus */
+    .form-control, .form-select { font-size: 16px; min-height: 44px; }
+    .btn { min-height: 42px; }
+    .btn-sm { min-height: 36px; }
+    .btn-icon { min-height: 0; }
+
+    .topbar-inner { padding: 8px 0; }
+    .brand img { height: 44px; max-width: 110px; }
+    .brand-name { font-size: .88rem; }
+    .brand-sub { display: none; }
+    .topbar-actions { width: 100%; justify-content: space-between; gap: 6px; }
+    .topbar-actions .btn-label { display: none; }
+    #lowStockWrapper { padding: .38rem .6rem; }
+
+    .stat-card { padding: 14px; }
+    .stat-value { font-size: 1.2rem; }
+    .stat-icon { width: 34px; height: 34px; font-size: .85rem; border-radius: 10px; }
+    .panel { padding: 14px; }
+
+    .section-head { align-items: stretch; }
+    .section-head > .btn, .section-head > div > .btn { width: 100%; }
+    .section-head .d-flex { width: 100%; }
+    .section-head .d-flex > .btn { flex: 1 1 auto; }
+
+    .modal-dialog { margin: 10px; }
+    .modal-body { padding: 16px; }
+    .modal-header, .modal-footer { padding: 12px 16px; }
+    .modal-footer > .btn, .modal-footer > .d-flex { flex: 1 1 auto; }
+    .modal-footer > .d-flex > .btn { flex: 1 1 auto; }
+
+    .profit-card { padding: 16px; }
+    .profit-card h3 { font-size: 1.4rem; }
+    #backToTopBtn { right: 14px; bottom: 14px; }
+    .toast-container { width: 92vw; }
+
+    .table-compact { min-width: 600px; font-size: .84rem; }
+    .table-compact.table-compact-narrow { min-width: 100%; }
+    .table-compact > :not(caption) > * > * { padding: .55rem .6rem; white-space: nowrap; }
+    .table-compact td:first-child { white-space: normal; min-width: 130px; max-width: 160px; }
+    .table-compact .btn-sm { padding: .3rem .5rem; min-height: 32px; }
+
+    /* Data tables become stacked cards */
+    .table-stack thead { display: none; }
+    .table-stack, .table-stack tbody, .table-stack tr, .table-stack td { display: block; width: 100%; }
+    .table-stack tbody tr {
+      border: 1px solid var(--line); border-radius: 12px; margin: 10px; width: auto;
+      padding: 4px 0; background: var(--surface-2);
+    }
+    .table-stack td {
+      display: flex; justify-content: space-between; align-items: center; gap: 14px;
+      border: 0 !important; padding: .42rem .9rem !important; text-align: right; background: transparent !important;
+    }
+    .table-stack td::before {
+      content: attr(data-label); font-size: .72rem; font-weight: 650; text-transform: uppercase;
+      letter-spacing: .05em; color: var(--muted); text-align: left; flex-shrink: 0;
+    }
+    .table-stack td:not([data-label])::before { content: none; }
+    .table-stack td.text-end { justify-content: flex-end; border-top: 1px dashed var(--line) !important; margin-top: 4px; padding-top: .6rem !important; }
+    .table-stack td .empty-state { width: 100%; }
+    .table-stack tr.table-danger { border-color: rgba(239, 68, 68, .5); }
+    .table-wrap .table-stack { margin: 0; }
+  }
+
+  @media (max-width: 400px) {
+    .login-card { padding: 24px 18px; border-radius: 16px; }
+    .stat-label { font-size: .68rem; }
+    .nav-tabs .nav-link { padding: .5rem .75rem; font-size: .82rem; }
+  }
+
+  @media (hover: none) {
+    .btn-custom:hover { transform: none; }
+  }
+
+  @supports (padding: env(safe-area-inset-bottom)) {
+    #backToTopBtn { bottom: calc(24px + env(safe-area-inset-bottom)); }
+    .topbar { padding-top: env(safe-area-inset-top); }
+  }
 </style>
-  <!-- Font Awesome CDN for Icons -->
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
 <!-- Firebase SDKs -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body>
 
-<!-- Login Section -->
-<div id="loginSection" class="container py-5">
-
-  <!-- HEADER -->
-  <div class="d-flex align-items-center gap-3 mb-4">
-    <img src="img/logo.jpeg" alt="Logo" style="height: 100px; width: auto;">
-    <h3 class="mb-0">MADOLLAR LIQUOR PUB</h3>
-  </div>
-
-  <!-- LOGIN WRAPPER (kept but stabilized) -->
-  <div class="login-wrapper mx-auto" style="max-width: 400px;">
-
-    <!-- MODE SWITCH -->
-    <div class="d-flex justify-content-between mb-3">
-
-  <button type="button"
-          id="switchToAdminBtn"
-          class="btn btn-sm w-50 me-1 fw-bold"
-          style="background-color:#212529; color:#ffffff; border:1px solid #212529;"
-          onclick="window.setPortalMode('admin')">
-    🔑 Admin
-  </button>
-
-  <button type="button"
-          id="switchToStaffBtn"
-          class="btn btn-sm w-50 ms-1 fw-bold"
-          style="background-color:#ffffff; color:#000000; border:1px solid #000000;"
-          onclick="window.setPortalMode('staff')">
-    👤 Staff
-  </button>
-
-</div>
-    <!-- EMAIL -->
-    <div class="mb-3">
-      <input id="loginEmail"
-             type="email"
-             placeholder="Email"
-             class="form-control">
+<!-- ==========================================================================
+     LOGIN
+     ========================================================================== -->
+<div id="loginSection">
+  <div class="login-card">
+    <button type="button" class="theme-toggle login-theme-toggle" onclick="window.toggleTheme()" title="Toggle light / dark mode" aria-label="Toggle theme"><i class="fas fa-sun theme-icon"></i></button>
+    <div class="text-center mb-4">
+      <img src="img/logo.jpeg" alt="Madollar logo" class="login-logo mb-3">
+      <h4 class="mb-1">MADOLLAR LIQUOR PUB</h4>
+      <p class="text-muted mb-0">Sign in to manage inventory &amp; sales</p>
     </div>
 
-    <!-- PASSWORD -->
-    <div class="mb-3">
-      <input id="loginPass"
-             type="password"
-             placeholder="Password"
-             class="form-control">
+    <div class="portal-switch mb-4">
+      <button type="button" id="switchToAdminBtn" class="active" onclick="window.setPortalMode('admin')">
+        <i class="fas fa-user-shield me-1"></i> Admin
+      </button>
+      <button type="button" id="switchToStaffBtn" onclick="window.setPortalMode('staff')">
+        <i class="fas fa-user me-1"></i> Staff
+      </button>
     </div>
 
-    <!-- LOGIN BUTTON -->
-    <button id="loginBtn" class="w-100 btn btn-custom">
-      Login
-    </button>
+    <div class="mb-3">
+      <label class="form-label" for="loginEmail">Email address</label>
+      <input id="loginEmail" type="email" placeholder="you@example.com" class="form-control" autocomplete="username">
+    </div>
+    <div class="mb-3">
+      <label class="form-label" for="loginPass">Password</label>
+      <input id="loginPass" type="password" placeholder="••••••••" class="form-control" autocomplete="current-password">
+    </div>
 
-    <!-- MESSAGE -->
-    <div id="loginMsg" class="mt-2 small text-danger"></div>
-
+    <button id="loginBtn" class="w-100 btn btn-custom py-2">Login as Admin</button>
+    <div id="loginMsg" class="mt-3 small text-danger text-center"></div>
   </div>
-
 </div>
 
-<!-- Dashboard -->
+<!-- ==========================================================================
+     DASHBOARD
+     ========================================================================== -->
 <div id="dashboard" class="d-none">
-  <!-- Navbar -->
-  <nav class="navbar navbar-expand-lg">
-    <div class="container-fluid">
-      <div style="display: flex; align-items: center; gap: 20px;">
-  <img src="img/logo.jpeg" alt="Logo" style="height: 100px; width: auto;">
-  <h3 class="mb-4">MADOLLAR LIQUOR PUB </h3>
-</div>
-      <div class="d-flex align-items-center gap-3 ms-auto">
-        <button class="btn btn-outline-primary btn-sm position-relative me-2" onclick="window.openNotificationsModal()" title="View Notifications">
-          <i class="fas fa-bell me-1"></i> Notifications
-          <span id="notifBadge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none">0</span>
-        </button>
-        <div id="lowStockWrapper" style="cursor: pointer; display: inline-flex; align-items: center;">
-          <div class="small-muted">Low stock:</div>
-        </div>
-        <span id="lowStockBadge" class="bg-danger px-2 py-1 rounded text-white">0</span>
-        <span id="roleBadge" class="bg-warning ms-3 text-dark badge">ADMIN</span>
-        <button id="logoutBtn" class="ms-3 btn btn-sm btn-light">Logout</button>
-      </div>
-    </div>
-  </nav>
 
-  <div class="py-4 container">
-    <!-- Dashboard Cards -->
-   <div class="mb-4 row g-3">
-  <div class="col-sm-4">
-    <div class="p-3 card shadow-sm border-0">
-      <div class="d-flex justify-content-between align-items-center mb-2">
-        <div>
-          <div class="small text-muted"><i class="fas fa-calendar-day me-1 text-success"></i>Today's Sales</div>
-          <h5 id="todaysSales" class="fw-bold mb-0 text-success">KSh 0</h5>
+  <!-- Top bar -->
+  <header class="topbar">
+    <div class="container-xl">
+      <div class="topbar-inner">
+        <div class="brand">
+          <img src="img/logo.jpeg" alt="Logo">
+          <div>
+            <div class="brand-name">MADOLLAR LIQUOR PUB</div>
+            <div class="brand-sub">Inventory &amp; Sales System</div>
+          </div>
         </div>
-        <div class="text-end">
-          <div class="small text-muted"><i class="fas fa-history me-1 text-info"></i>Previous Day Sales</div>
-          <h5 id="yesterdaysSales" class="fw-bold mb-0 text-info">KSh 0</h5>
-        </div>
-      </div>
-      <div class="admin-only d-none pt-2 border-top border-secondary">
-        <div class="d-flex justify-content-between align-items-center">
-          <span class="small text-muted">Monthly Sales:</span>
-          <strong id="monthlySales" class="text-primary fs-6">KSh 0</strong>
+
+        <div class="topbar-actions">
+          <div id="lowStockWrapper" title="View low stock items">
+            <i class="fas fa-triangle-exclamation"></i>
+            <span>Low stock</span>
+            <span id="lowStockBadge">0</span>
+          </div>
+          <button class="btn btn-top" onclick="window.openNotificationsModal()" title="View Notifications">
+            <i class="fas fa-bell"></i><span class="btn-label ms-1">Notifications</span>
+            <span id="notifBadge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none">0</span>
+          </button>
+          <button type="button" class="theme-toggle" onclick="window.toggleTheme()" title="Toggle light / dark mode" aria-label="Toggle theme"><i class="fas fa-sun theme-icon"></i></button>
+          <span id="roleBadge" class="badge">ADMIN</span>
+          <button id="logoutBtn" class="btn btn-top"><i class="fas fa-right-from-bracket"></i><span class="btn-label ms-1">Logout</span></button>
         </div>
       </div>
     </div>
-  </div>
-  <div class="col-sm-4"><div class="p-3 card"><div class="small-muted">Customers</div><h4 id="customerCount">0</h4></div></div>
-  <div class="col-sm-4"><div class="p-3 card"><div class="small-muted">Products</div><h4 id="productCount">0</h4></div></div>
+  </header>
 
-  <div class="col-sm-6 admin-only d-none">
-    <div class="p-3 card shadow-sm border-0">
-      <div class="small-muted fw-bold">Total Stock Value</div>
-      <div class="d-flex justify-content-between mt-2">
-        <div><strong>Cost:</strong> <span id="totalBuyValue" class="text-secondary fw-bold">KSh 0</span></div>
-        <div><strong>Expected:</strong> <span id="totalSellValue" class="text-success fw-bold">KSh 0</span></div>
+  <main class="container-xl py-4">
+
+    <!-- Stat cards -->
+    <div class="row g-3 mb-4">
+      <div class="col-12 col-lg-6">
+        <div class="card stat-card">
+          <div class="row g-3">
+            <div class="col-6">
+              <div class="d-flex align-items-start gap-3">
+                <span class="stat-icon ic-green"><i class="fas fa-calendar-day"></i></span>
+                <div>
+                  <div class="stat-label">Today's Sales</div>
+                  <div id="todaysSales" class="stat-value">KSh 0</div>
+                </div>
+              </div>
+            </div>
+            <div class="col-6">
+              <div class="d-flex align-items-start gap-3">
+                <span class="stat-icon ic-blue"><i class="fas fa-clock-rotate-left"></i></span>
+                <div>
+                  <div class="stat-label">Previous Day</div>
+                  <div id="yesterdaysSales" class="stat-value">KSh 0</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="admin-only d-none stat-divider d-flex justify-content-between align-items-center">
+            <span class="small text-muted fw-semibold">Monthly Sales</span>
+            <strong id="monthlySales" class="fs-6">KSh 0</strong>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-6 col-lg-3">
+        <div class="card stat-card">
+          <span class="stat-icon ic-violet mb-3"><i class="fas fa-users"></i></span>
+          <div class="stat-label">Customers</div>
+          <div id="customerCount" class="stat-value">0</div>
+        </div>
+      </div>
+      <div class="col-6 col-lg-3">
+        <div class="card stat-card">
+          <span class="stat-icon ic-amber mb-3"><i class="fas fa-wine-bottle"></i></span>
+          <div class="stat-label">Products</div>
+          <div id="productCount" class="stat-value">0</div>
+        </div>
+      </div>
+
+      <div class="col-12 col-lg-6 admin-only d-none">
+        <div class="card stat-card">
+          <div class="d-flex align-items-center gap-2 mb-3">
+            <span class="stat-icon ic-rose"><i class="fas fa-vault"></i></span>
+            <div class="stat-label">Total Stock Value</div>
+          </div>
+          <div class="row g-3">
+            <div class="col-6">
+              <div class="small text-muted">Cost</div>
+              <div id="totalBuyValue" class="fs-5 fw-bold">KSh 0</div>
+            </div>
+            <div class="col-6">
+              <div class="small text-muted">Expected</div>
+              <div id="totalSellValue" class="fs-5 fw-bold text-success">KSh 0</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-12 col-lg-6 admin-only d-none">
+        <div class="card stat-card">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <div class="d-flex align-items-center gap-2">
+              <span class="stat-icon ic-blue"><i class="fas fa-bullseye"></i></span>
+              <div class="stat-label">Monthly Target</div>
+            </div>
+            <button class="btn btn-soft btn-sm" onclick="window.openTargetModal()"><i class="fas fa-sliders me-1"></i>Set Target</button>
+          </div>
+          <div class="progress">
+            <div id="salesProgressBar" class="progress-bar bg-success" role="progressbar" style="width: 0%;">0%</div>
+          </div>
+          <div class="mt-2 small text-muted" id="targetLabel">KSh 0 / KSh 0</div>
+        </div>
       </div>
     </div>
-  </div>
 
-  <div class="col-sm-6 admin-only d-none">
-    <div class="p-3 card shadow-sm border-0">
-      <div class="d-flex justify-content-between align-items-center mb-1">
-        <div class="small-muted fw-bold"><i class="fas fa-bullseye text-primary me-1"></i> Monthly Target</div>
-        <button class="btn btn-sm btn-outline-primary py-0 px-2 admin-only" style="font-size: 11px;" onclick="window.openTargetModal()">⚙️ Set Target</button>
-      </div>
-      <div class="progress mt-2" style="height: 20px;">
-        <div id="salesProgressBar" class="progress-bar bg-success" role="progressbar" style="width: 0%;">0%</div>
-      </div>
-      <div class="mt-2 text-center small text-muted" id="targetLabel">KSh 0 / KSh 0</div>
+    <!-- Tabs -->
+    <div class="tabs-scroll">
+      <ul class="nav nav-tabs" id="mainTabs" role="tablist">
+        <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#productsTab"><i class="fas fa-boxes-stacked"></i>Products</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#customersTab"><i class="fas fa-address-book"></i>Customers</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#posTab"><i class="fas fa-cash-register"></i>POS</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#salesTab"><i class="fas fa-chart-line"></i>Sales</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#attendanceTab"><i class="fas fa-user-clock"></i>Clock In &amp; Out</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#inflowLogsTab"><i class="fas fa-truck-ramp-box"></i>Restock Logs</button></li>
+        <li class="nav-item admin-only d-none"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#requisitionTab"><i class="fas fa-clipboard-list"></i>Requisition</button></li>
+        <li class="nav-item admin-only d-none"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#staffManagementTab"><i class="fas fa-users-gear"></i>Staff</button></li>
+      </ul>
     </div>
-  </div>
-</div>
 
-  <ul class="nav nav-tabs" id="mainTabs">
-  <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#productsTab">Products</button></li>
-  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#customersTab">Customers</button></li>
-  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#posTab">POS</button></li>
-  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#salesTab">Sales</button></li>
-  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#attendanceTab">Staff Clock in & out</button></li>
-  
-  <li class="nav-item">
-    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#inflowLogsTab">Restock Logs</button>
-  </li>
-  
-  <li class="nav-item admin-only d-none">
-    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#requisitionTab">Requisition</button>
-  </li>
-  <li class="nav-item admin-only d-none">
-    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#staffManagementTab">Staff Management</button>
-  </li>
-</ul>
-    <div class="col-sm-4">
-    
-</div>
+    <div class="tab-content">
 
-    <div class="pt-3 tab-content">
+      <!-- ================= PRODUCTS ================= -->
       <div class="tab-pane fade show active" id="productsTab">
-  <h5>Products</h5>
-        
-<div class="mb-3 row g-2 admin-only d-none">
-  <div class="col-md-3">
-    <input id="prodName" type="text" placeholder="Product Name" class="form-control">
-  </div>
-  <div class="col-md-2">
-    <input id="prodBuyPrice" type="number" placeholder="Buy Price" class="form-control">
-  </div>
-  <div class="col-md-2">
-    <input id="prodPrice" type="number" placeholder="Sell Price" class="form-control">
-  </div>
-  <div class="col-md-1">
-    <input id="prodStock" type="number" placeholder="Stock" class="form-control">
-  </div>
-  <div class="col-md-2">
-    <input id="prodMin" type="number" placeholder="Min alert" class="form-control">
-  </div>
-  <div class="col-md-2">
-    <button id="addProductBtn" class="w-100 btn btn-custom">Add Product</button>
-  </div>
-</div>
-        <input type="text" id="searchInput" placeholder="Search products by name..." class="form-control mb-3">
-
-<table class="table table-striped">
-  <thead id="productsHead">
-    </thead>
-  <tbody id="productsTable"></tbody>
-</table>
-</div>
-<div class="modal fade" id="lowStockModal" tabindex="-1" aria-labelledby="lowStockModalLabel" aria-hidden="true">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="lowStockModalLabel">Low Stock Alerts</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body">
-        </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-      </div>
-    </div>
-  </div>
-</div>
-<div class="tab-pane fade" id="inflowLogsTab" role="tabpanel">
-    <div id="productLogsPage" class="dashboard-page p-3">
-        <!--stock logs-->
-        <!-- Header & Top Global Actions -->
-        <div class="d-flex justify-content-between align-items-center mb-2">
-            <h2>Restock</h2>
-            <div>
-                <button class="btn btn-sm btn-success me-2" id="downloadRestocksPdfBtn">
-                    <i class="fas fa-file-pdf me-1"></i> Download Restocks PDF
-                </button>
-                <button class="btn btn-sm btn-primary" id="downloadNewProdsPdfBtn">
-                    <i class="fas fa-file-pdf me-1"></i> Download New Products PDF
-                </button>
-            </div>
-        </div>
-        <hr class="mb-4">
-
-        <!-- SECTION A: RESTOCKED PRODUCTS (Grouped dynamically by Date) -->
-        <div class="mb-5">
-            <h3 class="mb-3 text-primary"><i class="fas fa-boxes me-2"></i>Restocked Products History</h3>
-            <div id="restockDateTablesContainer">
-                <div class="text-center text-muted py-3">
-                    <i class="fas fa-spinner fa-spin me-2"></i> Loading restock logs...
-                </div>
-            </div>
-        </div>
-
-        <!-- SECTION B: NEWLY REGISTERED PRODUCTS (Grouped dynamically by Date) -->
-        <div class="mb-4">
-            <h3 class="mb-3 text-info"><i class="fas fa-folder-plus me-2"></i>Newly Registered Products History</h3>
-            <div id="newProductsDateTablesContainer">
-                <div class="text-center text-muted py-3">
-                    <i class="fas fa-spinner fa-spin me-2"></i> Loading new product logs...
-                </div>
-            </div>
-        </div>
-
-    </div>
-</div>
-<!-- Floating Back to Top Button -->
-<button id="backToTopBtn" aria-label="Scroll to top" title="Go to top">
-  <span style="font-size: 1.4rem; font-weight: bold; line-height: 1;">&#8593;</span>
-</button>
-      <!-- Customers -->
-      <div class="tab-pane fade" id="customersTab">
-        <h5>Customers</h5>
-        <div class="mb-3 row g-2">
-          <div class="col-md-4"><input id="custName" type="text" placeholder="Customer Name" class="form-control"></div>
-          <div class="col-md-4"><input id="custPhone" type="text" placeholder="Phone" class="form-control"></div>
-          <div class="col-md-4"><button id="addCustomerBtn" class="w-100 btn btn-custom">Add Customer</button></div>
-        </div>
-        <table class="table table-striped">
-          <thead><tr><th>Name</th><th>Phone</th><th>Actions</th></tr></thead>
-          <tbody id="customersTable"></tbody>
-        </table>
-      </div>
-
-    <div class="tab-pane fade" id="posTab">
-  <div class="d-flex justify-content-between align-items-center mb-3">
-    <h5>Point of Sale</h5>
-    <div class="card bg-dark text-white px-3 py-2">
-      <span class="small-muted">Total</span>
-      <h5 class="mb-0" id="cartTotalDisplay">KSh 0</h5>
-    </div>
-  </div>
-
-  <div class="row g-2">
-    <div class="col-md-4">
-      <label class="small-muted">Customer</label>
-      <div class="d-flex gap-2">
-        <select id="posCustomer" class="form-select">
-          <option value="">Guest</option>
-        </select>
-        <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#addCustomerModal">+</button>
-      </div>
-    </div>
-   
-    <div class="col-md-4 position-relative">
-      <label class="small-muted">Product Search</label>
-      <input type="text" id="productSearch" class="form-control" placeholder="Search product...">
-      <div id="productResults" class="dropdown-menu w-100 shadow" style="display:none; position:absolute; z-index:1000;"></div>
-    </div>
-
-   <div class="col-md-2">
-  <label class="small-muted">Qty</label>
-  <input id="posQty" type="text" value="" class="form-control" placeholder="1 or 1/2">
-</div>
-    <div class="d-flex align-items-end col-md-2">
-      <button id="addToCartBtn" class="w-100 btn btn-primary">Add to Cart</button>
-    </div>
-  </div>
-
-  <ul id="cartList" class="list-group mt-3 mb-3"></ul>
-
-  <div class="d-flex gap-2 mb-3">
-    <button id="checkoutBtn" class="btn btn-success">Checkout</button>
-    <button id="clearCartBtn" class="btn btn-secondary">Clear Cart</button>
-  </div>
-
-  <!-- Payment Checkout Modal Popup -->
-  <div class="modal fade" id="paymentModal" tabindex="-1" data-bs-backdrop="static">
-    <div class="modal-dialog modal-dialog-centered">
-      <div class="modal-content">
-        <div class="modal-header bg-success text-white">
-          <h5 class="modal-title fw-bold"><i class="fas fa-cash-register me-2"></i>Checkout & Complete Payment</h5>
-          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-        </div>
-        <div class="modal-body">
-          <div class="alert alert-dark border d-flex justify-content-between align-items-center mb-3">
-            <div>
-              <span class="text-muted small d-block">Customer:</span>
-              <strong id="modalCustomerName" class="fs-6 text-light">Guest</strong>
-            </div>
-            <div class="text-end">
-              <span class="text-muted small d-block">Total Amount:</span>
-              <strong id="modalTotalAmount" class="fs-4 text-warning">KSh 0.00</strong>
-            </div>
+        <div class="section-head">
+          <div>
+            <h5 class="section-title">Products</h5>
+            <p class="section-sub">Manage your inventory, prices and stock levels.</p>
           </div>
-
-          <div class="mb-3">
-            <label class="form-label small-muted fw-bold">Cart Items Summary</label>
-            <div id="modalCartSummary" class="border rounded p-2 bg-dark text-light" style="max-height: 150px; overflow-y: auto; font-size: 0.88rem;"></div>
-          </div>
-
-          <div class="row g-2">
-            <div class="col-md-6 mb-2">
-              <label class="form-label small-muted fw-bold">Payment Method</label>
-              <select id="paymentMethod" class="form-select">
-                <option value="Cash">Cash</option>
-                <option value="M-PESA">M-PESA</option>
-                <option value="Card">Card</option>
-                <option value="Bank Transfer">Bank Transfer</option>
-              </select>
-            </div>
-            <div class="col-md-6 mb-2">
-              <label class="form-label small-muted fw-bold">Transaction Code (Optional)</label>
-              <input id="transCode" type="text" class="form-control" placeholder="e.g. QX12345678">
-            </div>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button type="button" id="cancelPaymentBtn" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="button" id="paymentCompleteBtn" class="btn btn-success fw-bold px-4">
-            <i class="fas fa-check-circle me-1"></i>Complete Payment
+          <button class="btn btn-custom admin-only d-none" onclick="window.openAddProductModal()">
+            <i class="fas fa-plus me-1"></i> Add Product
           </button>
         </div>
-      </div>
-    </div>
-  </div>
-</div>
 
-<div class="modal fade" id="addCustomerModal" tabindex="-1">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">Quick Add Customer</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <input type="text" id="newCustName" class="form-control mb-2" placeholder="Customer Name">
-        <input type="text" id="newCustPhone" class="form-control" placeholder="Phone Number">
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-        <button type="button" class="btn btn-primary" id="saveCustomerBtn">Save Customer</button>
-      </div>
-    </div>
-  </div>
-</div>
-<div class="tab-pane fade" id="requisitionTab">
-    <div class="card p-3 mt-3">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <h5>Create Stock Requisition List</h5>
-            <div>
-                <label class="small text-muted me-2">Default Price Type:</label>
-                <select id="priceTypeSelect" class="form-control d-inline-block" style="width: auto;">
-                    <option value="sellPrice">Sell Price</option>
-                    <option value="buyPrice">Buy Price</option>
-                </select>
+        <div class="card panel">
+          <div class="search-box mb-3">
+            <i class="fas fa-search"></i>
+            <input type="text" id="searchInput" placeholder="Search products by name..." class="form-control">
+          </div>
+          <div class="table-wrap">
+            <div class="table-responsive">
+              <table class="table table-hover align-middle table-compact">
+                <thead id="productsHead"></thead>
+                <tbody id="productsTable"></tbody>
+              </table>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= CUSTOMERS ================= -->
+      <div class="tab-pane fade" id="customersTab">
+        <div class="section-head">
+          <div>
+            <h5 class="section-title">Customers</h5>
+            <p class="section-sub">People you sell to and their contact details.</p>
+          </div>
+          <button class="btn btn-custom" onclick="window.openCustomerModal()">
+            <i class="fas fa-user-plus me-1"></i> Add Customer
+          </button>
+        </div>
+        <div class="card panel">
+          <div class="table-wrap">
+            <div class="table-responsive">
+              <table class="table table-hover align-middle table-compact table-compact-narrow">
+                <thead><tr><th>Name</th><th>Phone</th><th class="text-end">Actions</th></tr></thead>
+                <tbody id="customersTable"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= POS ================= -->
+      <div class="tab-pane fade" id="posTab">
+        <div class="section-head">
+          <div>
+            <h5 class="section-title">Point of Sale</h5>
+            <p class="section-sub">Search a product, set the quantity and add it to the cart.</p>
+          </div>
         </div>
 
-        <div class="d-flex justify-content-end mb-3">
-            <button class="btn btn-outline-light btn-sm d-flex align-items-center gap-2" onclick="openProductSelector()">
-                <i class="bi bi-plus-lg"></i> Add Items
-            </button>
+        <div class="row g-3">
+          <div class="col-lg-8">
+            <div class="card panel mb-3">
+              <div class="row g-3">
+                <div class="col-md-6 col-lg-5">
+                  <label class="form-label">Customer</label>
+                  <div class="d-flex gap-2">
+                    <select id="posCustomer" class="form-select">
+                      <option value="">Guest</option>
+                    </select>
+                    <button class="btn btn-soft btn-icon flex-shrink-0" style="width:42px;height:auto" data-bs-toggle="modal" data-bs-target="#addCustomerModal" title="Quick add customer">
+                      <i class="fas fa-plus"></i>
+                    </button>
+                  </div>
+                </div>
+                <div class="col-md-6 col-lg-4 position-relative">
+                  <label class="form-label">Product</label>
+                  <input type="text" id="productSearch" class="form-control" placeholder="Search product..." autocomplete="off">
+                  <div id="productResults" class="dropdown-menu w-100" style="display:none; position:absolute; z-index:1000;"></div>
+                </div>
+                <div class="col-5 col-md-4 col-lg-1">
+                  <label class="form-label">Qty</label>
+                  <input id="posQty" type="text" value="1" class="form-control px-2 text-center" placeholder="1 or 1/2">
+                </div>
+                <div class="col-7 col-md-8 col-lg-2 d-flex align-items-end">
+                  <button id="addToCartBtn" class="w-100 btn btn-custom"><i class="fas fa-cart-plus me-1"></i>Add</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="card panel">
+              <div class="d-flex justify-content-between align-items-center mb-3">
+                <h6 class="mb-0 fw-bold"><i class="fas fa-basket-shopping me-2 text-muted"></i>Current Cart</h6>
+              </div>
+              <ul id="cartList" class="list-group"></ul>
+            </div>
+          </div>
+
+          <div class="col-lg-4">
+            <div class="card total-card">
+              <div class="small-muted">Total Amount</div>
+              <h2 id="cartTotalDisplay">KSh 0</h2>
+              <hr style="border-color: rgba(255,255,255,.15)">
+              <button id="checkoutBtn" class="btn btn-custom w-100 mb-2 py-2"><i class="fas fa-lock me-2"></i>Checkout</button>
+              <button id="clearCartBtn" class="btn w-100" style="background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.15)">
+                <i class="fas fa-trash-can me-2"></i>Clear Cart
+              </button>
+            </div>
+          </div>
         </div>
-        
-        <div class="table-responsive">
-            <table class="table table-bordered table-striped mt-3">
+      </div>
+
+      <!-- ================= SALES ================= -->
+      <div class="tab-pane fade" id="salesTab">
+        <div class="section-head">
+          <div>
+            <h5 class="section-title">Sales Reporting</h5>
+            <p class="section-sub">Review transactions, profits and daily summaries.</p>
+          </div>
+        </div>
+
+        <div class="row g-3 admin-only d-none mb-3 align-items-start">
+          <div class="col-md-6">
+            <div class="card profit-card green">
+              <div class="d-flex justify-content-between align-items-start">
+                <div>
+                  <h6 class="text-uppercase mb-1">Daily Profit</h6>
+                  <h3 id="dailyProfit" class="fw-bold mb-0">KSh 0</h3>
+                </div>
+                <i class="fas fa-arrow-trend-up fs-3 opacity-50"></i>
+              </div>
+              <div class="small opacity-75 mt-2">Profit made from today's sales</div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="card profit-card blue">
+              <h6 class="text-uppercase mb-1">Total Net Profit</h6>
+              <h3 id="totalProfit" class="fw-bold mb-3">KSh 0</h3>
+              <hr class="border-white opacity-25 my-2">
+              <div id="profitCardBreakdown" class="small"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card panel mb-3">
+          <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <h6 class="mb-0 fw-bold"><i class="fas fa-receipt me-2 text-muted"></i>Sales History &amp; Search</h6>
+            <div class="d-flex gap-2 align-items-center flex-wrap">
+              <input type="date" id="dateFrom" class="form-control form-control-sm" style="width:auto" title="From">
+              <input type="date" id="dateTo" class="form-control form-control-sm" style="width:auto" title="To">
+              <button id="downloadFilteredPDF" class="btn btn-soft btn-sm"><i class="fas fa-file-pdf me-1 text-danger"></i>PDF Range</button>
+              <button id="downloadAllPDF" class="btn btn-soft btn-sm"><i class="fas fa-file-pdf me-1 text-danger"></i>Download All</button>
+            </div>
+          </div>
+
+          <div class="input-group mb-3">
+            <span class="input-group-text"><i class="fas fa-search"></i></span>
+            <input type="text" id="salesSearchInput" class="form-control" placeholder="Search by product, customer, or receipt code...">
+            <button class="btn btn-soft" type="button" onclick="document.getElementById('salesSearchInput').value=''; window.filterSalesTable();">Clear</button>
+          </div>
+
+          <div id="salesSearchSummary" class="alert alert-info py-2 px-3 mb-3 d-none"></div>
+
+          <div class="table-wrap">
+            <div class="table-responsive">
+              <table class="table table-hover align-middle">
                 <thead>
-                    <tr>
-                        <th>Product Name</th>
-                        <th>Price Type</th>
-                        <th>Price</th>
-                        <th style="min-width: 140px;">Qty</th> <th>Subtotal</th> 
-                        <th>Action</th>
-                    </tr>
+                  <tr>
+                    <th style="min-width: 140px;">Date &amp; Time</th>
+                    <th style="min-width: 120px;">Customer</th>
+                    <th style="min-width: 320px;">Items &amp; Quantities Sold</th>
+                    <th style="min-width: 130px;">Total</th>
+                    <th style="min-width: 140px;" class="text-end">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="salesTable"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="card panel">
+          <h6 class="fw-bold mb-3"><i class="fas fa-calendar-day me-2 text-muted"></i>Daily Product Sales Summary</h6>
+          <div id="dailySalesContainer"></div>
+        </div>
+      </div>
+
+      <!-- ================= ATTENDANCE ================= -->
+      <div class="tab-pane fade" id="attendanceTab">
+        <div class="section-head">
+          <div>
+            <h5 class="section-title">Staff Clock In &amp; Out</h5>
+            <p class="section-sub">Record your shift and review attendance history.</p>
+          </div>
+          <div class="d-flex gap-2 flex-wrap">
+            <button onclick="window.clockIn()" class="btn btn-success"><i class="fas fa-right-to-bracket me-1"></i>Clock In</button>
+            <button onclick="window.clockOut()" class="btn btn-danger"><i class="fas fa-right-from-bracket me-1"></i>Clock Out</button>
+          </div>
+        </div>
+
+        <div class="card panel">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h6 class="mb-0 fw-bold">Records</h6>
+            <button class="btn btn-soft btn-sm admin-only d-none" onclick="exportAttendance()"><i class="fas fa-file-pdf me-1 text-danger"></i>Download PDF Report</button>
+          </div>
+          <div class="table-wrap">
+            <div class="table-responsive">
+              <table class="table table-hover align-middle table-compact">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th class="admin-only d-none">Staff</th>
+                    <th>In</th>
+                    <th>Out</th>
+                    <th class="admin-only d-none text-end">Action</th>
+                  </tr>
+                </thead>
+                <tbody id="attendanceTable"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= RESTOCK LOGS ================= -->
+      <div class="tab-pane fade" id="inflowLogsTab" role="tabpanel">
+        <div class="section-head">
+          <div>
+            <h5 class="section-title">Restock Logs</h5>
+            <p class="section-sub">History of stock additions, adjustments and new products.</p>
+          </div>
+          <div class="d-flex gap-2 flex-wrap">
+            <button class="btn btn-soft btn-sm" id="downloadRestocksPdfBtn"><i class="fas fa-file-pdf me-1 text-danger"></i>Restocks PDF</button>
+            <button class="btn btn-soft btn-sm" id="downloadNewProdsPdfBtn"><i class="fas fa-file-pdf me-1 text-danger"></i>New Products PDF</button>
+          </div>
+        </div>
+
+        <div class="mb-4">
+          <h6 class="fw-bold mb-3"><i class="fas fa-boxes-stacked me-2 text-success"></i>Restocked Products History</h6>
+          <div id="restockDateTablesContainer">
+            <div class="empty-state"><i class="fas fa-spinner fa-spin"></i>Loading restock logs...</div>
+          </div>
+        </div>
+
+        <div>
+          <h6 class="fw-bold mb-3"><i class="fas fa-folder-plus me-2 text-primary"></i>Newly Registered Products History</h6>
+          <div id="newProductsDateTablesContainer">
+            <div class="empty-state"><i class="fas fa-spinner fa-spin"></i>Loading new product logs...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= REQUISITION ================= -->
+      <div class="tab-pane fade" id="requisitionTab">
+        <div class="section-head">
+          <div>
+            <h5 class="section-title">Stock Requisition</h5>
+            <p class="section-sub">Build a list of products to order and export it as PDF.</p>
+          </div>
+          <div class="d-flex gap-2 flex-wrap align-items-center">
+            <select id="priceTypeSelect" class="form-select form-select-sm" style="width:auto" title="Default price type">
+              <option value="sellPrice">Sell Price</option>
+              <option value="buyPrice">Buy Price</option>
+            </select>
+            <button class="btn btn-custom btn-sm" onclick="openProductSelector()"><i class="fas fa-plus me-1"></i>Add Items</button>
+          </div>
+        </div>
+
+        <div class="card panel">
+          <div class="table-wrap">
+            <div class="table-responsive">
+              <table class="table align-middle">
+                <thead>
+                  <tr>
+                    <th>Product Name</th>
+                    <th>Price Type</th>
+                    <th>Price</th>
+                    <th style="min-width: 140px;">Qty</th>
+                    <th>Subtotal</th>
+                    <th class="text-end">Action</th>
+                  </tr>
                 </thead>
                 <tbody id="requisitionTableBody"></tbody>
                 <tfoot id="requisitionTableFooter">
-                    <tr class="table-dark">
-                        <th colspan="3" class="text-end">Grand Total:</th>
-                        <th id="grandTotalValue" colspan="3">KSh 0</th>
-                    </tr>
+                  <tr>
+                    <th colspan="4" class="text-end">Grand Total</th>
+                    <th id="grandTotalValue" colspan="2">KSh 0</th>
+                  </tr>
                 </tfoot>
-            </table>
-        </div>
-        
-        <button class="btn btn-success mt-3" onclick="downloadRequisitionPDF()">
-            Download Requisition PDF
-        </button>
-    </div>
-</div>
-
-<div class="modal fade" id="productSelectorModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Select Products to Requisition</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+              </table>
             </div>
-            <div class="modal-body">
-                <input type="text" id="searchProd" class="form-control mb-3" placeholder="Search products...">
-                <div style="max-height: 400px; overflow-y: auto;">
-                    <table class="table table-sm">
-                        <thead>
-                            <tr>
-                                <th><input type="checkbox" id="selectAll"></th>
-                                <th>Name</th>
-                                <th>Current Stock</th> </tr>
-                        </thead>
-                        <tbody id="modalProductList"></tbody>
-                    </table>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-custom" onclick="addSelectedToRequisition()">Add Selected Items</button>
-            </div>
+          </div>
+          <button class="btn btn-success mt-3" onclick="downloadRequisitionPDF()">
+            <i class="fas fa-file-pdf me-1"></i>Download Requisition PDF
+          </button>
         </div>
-    </div>
-</div>
+      </div>
 
-  <div class="tab-pane fade" id="salesTab">
-    <h5>Sales Reporting</h5>
-
-    <div class="row admin-only mb-4">
-        <!-- Daily Profit Card -->
-        <div class="col-md-6 mb-3 mb-md-0">
-            <div class="card bg-success text-white shadow-sm h-100">
-                <div class="card-body d-flex flex-column justify-content-center">
-                    <h6 class="text-uppercase tracking-wider opacity-75 mb-1">Daily Profit</h6>
-                    <h3 id="dailyProfit" class="fw-bold mb-0">KSh 0</h3>
-                </div>
-            </div>
+      <!-- ================= STAFF MANAGEMENT ================= -->
+      <div class="tab-pane fade" id="staffManagementTab" role="tabpanel">
+        <div class="section-head">
+          <div>
+            <h5 class="section-title">Staff Management</h5>
+            <p class="section-sub">Create, edit, block or remove employee accounts.</p>
+          </div>
+          <button class="btn btn-custom" onclick="window.openStaffModal()">
+            <i class="fas fa-user-plus me-1"></i> Add Staff
+          </button>
         </div>
 
-        <!-- Total Net Profit Card with Last Month Breakdown -->
-        <div class="col-md-6">
-            <div class="card bg-primary text-white shadow-sm h-100">
-                <div class="card-body">
-                    <h6 class="text-uppercase tracking-wider opacity-75 mb-1">Total Net Profit</h6>
-                    <h3 id="totalProfit" class="fw-bold mb-3">KSh 0</h3>
-                    
-                    <!-- Divider Line -->
-                    <hr class="border-white opacity-25 my-2">
-                    
-                    <!-- Last Month Breakdown Dynamic Container -->
-                    <div id="profitCardBreakdown" class="small">
-                        <!-- JavaScript will dynamically insert last month's profit right here -->
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="card p-3 shadow-sm mb-4">
-        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-            <h6 class="mb-0 fw-bold"><i class="fas fa-history me-2 text-primary"></i>Individual Sales History & Product Search</h6>
-            <div class="d-flex gap-2 align-items-center flex-wrap">
-                <input type="date" id="dateFrom" class="form-control form-control-sm" placeholder="From">
-                <input type="date" id="dateTo" class="form-control form-control-sm" placeholder="To">
-                <button id="downloadFilteredPDF" class="btn btn-primary btn-sm"><i class="fas fa-file-pdf me-1"></i>PDF Range</button>
-                <button id="downloadAllPDF" class="btn btn-secondary btn-sm"><i class="fas fa-file-pdf me-1"></i>Download All</button>
-            </div>
-        </div>
-
-        <!-- Product & Sales Search Bar -->
-        <div class="input-group mb-3">
-            <span class="input-group-text bg-light border-end-0"><i class="fas fa-search text-muted"></i></span>
-            <input type="text" id="salesSearchInput" class="form-control border-start-0" placeholder="Search sales by product name (e.g. Tusker), customer, or receipt code...">
-            <button class="btn btn-outline-secondary" type="button" onclick="document.getElementById('salesSearchInput').value=''; window.filterSalesTable();">Clear Search</button>
-        </div>
-
-        <!-- Dynamic Product Search Summary Alert Banner -->
-        <div id="salesSearchSummary" class="alert alert-info py-2 px-3 mb-3 d-none shadow-sm">
-            <!-- Dynamically populated by JS when searching for products -->
-        </div>
-
-        <div class="table-responsive">
-            <table class="table table-striped table-hover align-middle">
-                <thead class="table-dark">
-                    <tr>
-                        <th style="min-width: 140px;">Date & Time</th>
-                        <th style="min-width: 110px;">Customer</th>
-                        <th style="min-width: 320px;">Items & Quantities Sold</th>
-                        <th style="min-width: 130px;">Total Amount</th>
-                        <th style="min-width: 140px;" class="text-end">Actions</th>
-                    </tr>
+        <div class="card panel">
+          <div class="table-wrap">
+            <div class="table-responsive">
+              <table class="table table-hover align-middle table-compact">
+                <thead>
+                  <tr>
+                    <th>Employee</th>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>Status</th>
+                    <th class="text-end">Actions</th>
+                  </tr>
                 </thead>
-                <tbody id="salesTable"></tbody>
-            </table>
+                <tbody id="staffTableBody"></tbody>
+              </table>
+            </div>
+          </div>
         </div>
-    </div>
-    
-    <div class="card p-3 mb-4 shadow-sm">
-        <h6 class="fw-bold"><i class="fas fa-calendar-day me-2 text-primary"></i>Daily Product Sales Summary</h6>
-        <div id="dailySalesContainer"></div>
-    </div>
+      </div>
 
+    </div><!-- /tab-content -->
+  </main>
 </div>
 
-<!-- Edit Product Modal -->
-<div class="modal fade" id="editProductModal" tabindex="-1">
-  <div class="modal-dialog">
-    <div class="bg-dark p-3 text-white modal-content">
-      <h5>Edit Product</h5>
-      <input id="editProdName" class="mb-2 form-control" placeholder="Name">
-      <input id="editProdBuyingPrice" type="number" class="mb-2 form-control" placeholder="Buying Price">
-      <input id="editProdPrice" type="number" class="mb-2 form-control" placeholder="Selling Price">
-      <input id="editProdStock" type="number" class="mb-2 form-control" placeholder="Stock">
-      <input id="editProdMin" type="number" class="mb-2 form-control" placeholder="Min alert">
-      <button id="saveEditBtn" class="w-100 btn btn-success">Save Changes</button>
+<!-- Back to top -->
+<button id="backToTopBtn" aria-label="Scroll to top" title="Go to top"><i class="fas fa-arrow-up"></i></button>
+
+
+<!-- ==========================================================================
+     MODALS
+     ========================================================================== -->
+
+<!-- Add Product -->
+<div class="modal fade" id="addProductModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><span class="m-ico"><i class="fas fa-plus"></i></span>Add New Product</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-3">
+          <div class="col-12">
+            <label class="form-label" for="prodName">Product name</label>
+            <input id="prodName" type="text" placeholder="e.g. Tusker Lager 500ml" class="form-control">
+          </div>
+          <div class="col-6">
+            <label class="form-label" for="prodBuyPrice">Buy price (KSh)</label>
+            <input id="prodBuyPrice" type="number" placeholder="0" class="form-control">
+          </div>
+          <div class="col-6">
+            <label class="form-label" for="prodPrice">Sell price (KSh)</label>
+            <input id="prodPrice" type="number" placeholder="0" class="form-control">
+          </div>
+          <div class="col-6">
+            <label class="form-label" for="prodStock">Opening stock</label>
+            <input id="prodStock" type="number" step="any" placeholder="0" class="form-control">
+          </div>
+          <div class="col-6">
+            <label class="form-label" for="prodMin">Min. stock alert</label>
+            <input id="prodMin" type="number" step="any" placeholder="0" class="form-control">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-soft" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" id="addProductBtn" class="btn btn-custom"><i class="fas fa-check me-1"></i>Add Product</button>
+      </div>
     </div>
   </div>
 </div>
 
-<!-- Admin Target Config Modal -->
-<div class="modal fade" id="targetModal" tabindex="-1">
-  <div class="modal-dialog">
+<!-- Edit Product -->
+<div class="modal fade" id="editProductModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
-      <div class="modal-header bg-primary text-white py-2">
-        <h5 class="modal-title fs-6"><i class="fas fa-bullseye me-2"></i>Configure Monthly Sales Target</h5>
-        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      <div class="modal-header">
+        <h5 class="modal-title"><span class="m-ico"><i class="fas fa-pen"></i></span>Edit Product</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
-        <p class="small text-muted">Set target expected sales either as a percentage of total expected inventory value or a fixed amount in KSh.</p>
+        <div class="row g-3">
+          <div class="col-12">
+            <label class="form-label" for="editProdName">Product name</label>
+            <input id="editProdName" class="form-control" placeholder="Name">
+          </div>
+          <div class="col-6">
+            <label class="form-label" for="editProdBuyingPrice">Buy price (KSh)</label>
+            <input id="editProdBuyingPrice" type="number" class="form-control" placeholder="Buying price">
+          </div>
+          <div class="col-6">
+            <label class="form-label" for="editProdPrice">Sell price (KSh)</label>
+            <input id="editProdPrice" type="number" class="form-control" placeholder="Selling price">
+          </div>
+          <div class="col-6">
+            <label class="form-label" for="editProdStock">Stock</label>
+            <input id="editProdStock" type="number" step="any" class="form-control" placeholder="Stock">
+          </div>
+          <div class="col-6">
+            <label class="form-label" for="editProdMin">Min. stock alert</label>
+            <input id="editProdMin" type="number" step="any" class="form-control" placeholder="Min alert">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-soft" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" id="saveEditBtn" class="btn btn-custom"><i class="fas fa-floppy-disk me-1"></i>Save Changes</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Adjust Stock (restock / reduce) -->
+<div class="modal fade" id="stockModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><span class="m-ico"><i class="fas fa-boxes-packing"></i></span>Update Stock</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="d-flex justify-content-between align-items-center p-3 mb-3 rounded-3" style="background:var(--surface-2);border:1px solid var(--line)">
+          <div>
+            <div class="small text-muted">Product</div>
+            <div id="stockModalProductName" class="fw-bold">—</div>
+          </div>
+          <div class="text-end">
+            <div class="small text-muted">Current stock</div>
+            <div id="stockModalCurrent" class="fw-bold fs-5">0</div>
+          </div>
+        </div>
         <div class="mb-3">
-          <label class="form-label small fw-bold">Target Calculation Mode</label>
+          <label class="form-label" for="stockQtyInput">Quantity</label>
+          <input type="number" step="any" min="0" id="stockQtyInput" class="form-control" placeholder="e.g. 24">
+        </div>
+        <div>
+          <label class="form-label" for="stockReasonInput">Reason <span class="text-muted fw-normal">(required when reducing stock)</span></label>
+          <input type="text" id="stockReasonInput" class="form-control" placeholder="e.g. Damaged, expired, correction...">
+        </div>
+      </div>
+      <div class="modal-footer justify-content-between">
+        <button type="button" class="btn btn-soft" data-bs-dismiss="modal">Cancel</button>
+        <div class="d-flex gap-2">
+          <button type="button" id="stockRemoveBtn" class="btn btn-outline-danger"><i class="fas fa-minus me-1"></i>Reduce</button>
+          <button type="button" id="stockAddBtn" class="btn btn-success"><i class="fas fa-plus me-1"></i>Add Stock</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add Customer (Customers tab) -->
+<div class="modal fade" id="customerModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><span class="m-ico"><i class="fas fa-user-plus"></i></span>Add Customer</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label" for="custName">Customer name</label>
+          <input id="custName" type="text" placeholder="Full name" class="form-control">
+        </div>
+        <div>
+          <label class="form-label" for="custPhone">Phone number</label>
+          <input id="custPhone" type="text" placeholder="07XX XXX XXX" class="form-control">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-soft" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" id="addCustomerBtn" class="btn btn-custom"><i class="fas fa-check me-1"></i>Save Customer</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Quick Add Customer (POS) -->
+<div class="modal fade" id="addCustomerModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><span class="m-ico"><i class="fas fa-user-plus"></i></span>Quick Add Customer</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label" for="newCustName">Customer name</label>
+          <input type="text" id="newCustName" class="form-control" placeholder="Full name">
+        </div>
+        <div>
+          <label class="form-label" for="newCustPhone">Phone number</label>
+          <input type="text" id="newCustPhone" class="form-control" placeholder="07XX XXX XXX">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-soft" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-custom" id="saveCustomerBtn"><i class="fas fa-check me-1"></i>Save Customer</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Staff add / edit -->
+<div class="modal fade" id="staffModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><span class="m-ico"><i class="fas fa-id-badge"></i></span><span id="staffModalTitle">Add Staff Member</span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-3">
+          <div class="col-12">
+            <label class="form-label" for="staffName">Full name</label>
+            <input type="text" id="staffName" class="form-control" placeholder="Full employee name">
+          </div>
+          <div class="col-12">
+            <label class="form-label" for="staffEmail">Email (login ID)</label>
+            <input type="email" id="staffEmail" class="form-control" placeholder="name@example.com">
+          </div>
+          <div class="col-12">
+            <label class="form-label" for="staffPassword">Password</label>
+            <div class="input-group">
+              <input type="password" id="staffPassword" class="form-control" placeholder="Operational password" autocomplete="new-password">
+              <button class="btn btn-soft" type="button" onclick="(function(b){var i=document.getElementById('staffPassword');var s=i.type==='password';i.type=s?'text':'password';b.firstElementChild.className=s?'fas fa-eye-slash':'fas fa-eye';})(this)" title="Show / hide password"><i class="fas fa-eye"></i></button>
+            </div>
+          </div>
+          <div class="col-12">
+            <label class="form-label" for="staffRole">Role</label>
+            <select id="staffRole" class="form-select">
+              <option value="staff" selected>Staff Member</option>
+              <option value="admin">Administrator</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-soft" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" id="addStaffBtn" class="btn btn-custom" onclick="window.saveStaffMember()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Checkout / Payment -->
+<div class="modal fade" id="paymentModal" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><span class="m-ico ic-green"><i class="fas fa-cash-register"></i></span>Checkout &amp; Payment</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="d-flex justify-content-between align-items-center p-3 mb-3 rounded-3" style="background:var(--nav);color:#fff">
+          <div>
+            <div class="small" style="color:rgba(255,255,255,.6)">Customer</div>
+            <strong id="modalCustomerName" class="fs-6">Guest</strong>
+          </div>
+          <div class="text-end">
+            <div class="small" style="color:rgba(255,255,255,.6)">Total amount</div>
+            <strong id="modalTotalAmount" class="fs-4" style="color:#f3c27a">KSh 0.00</strong>
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Items</label>
+          <div id="modalCartSummary" class="border rounded-3 px-3 py-1" style="max-height: 170px; overflow-y: auto; font-size: .88rem; background: var(--surface-2)"></div>
+        </div>
+
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label" for="paymentMethod">Payment method</label>
+            <select id="paymentMethod" class="form-select">
+              <option value="Cash">Cash</option>
+              <option value="M-PESA">M-PESA</option>
+              <option value="Card">Card</option>
+              <option value="Bank Transfer">Bank Transfer</option>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label" for="transCode">Transaction code <span class="text-muted fw-normal">(optional)</span></label>
+            <input id="transCode" type="text" class="form-control" placeholder="e.g. QX12345678">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" id="cancelPaymentBtn" class="btn btn-soft" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" id="paymentCompleteBtn" class="btn btn-success fw-bold px-4">
+          <i class="fas fa-check-circle me-1"></i>Complete Payment
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Low stock -->
+<div class="modal fade" id="lowStockModal" tabindex="-1" aria-labelledby="lowStockModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="lowStockModalLabel"><span class="m-ico ic-rose"><i class="fas fa-triangle-exclamation"></i></span>Low Stock Alerts</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-soft" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Requisition product selector -->
+<div class="modal fade" id="productSelectorModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><span class="m-ico"><i class="fas fa-list-check"></i></span>Select Products to Requisition</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="search-box mb-3">
+          <i class="fas fa-search"></i>
+          <input type="text" id="searchProd" class="form-control" placeholder="Search products...">
+        </div>
+        <div class="table-wrap">
+          <table class="table table-sm align-middle">
+            <thead>
+              <tr>
+                <th style="width:40px"><input type="checkbox" id="selectAll" class="form-check-input"></th>
+                <th>Name</th>
+                <th>Current Stock</th>
+              </tr>
+            </thead>
+            <tbody id="modalProductList"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-soft" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-custom" onclick="addSelectedToRequisition()">Add Selected Items</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Monthly target -->
+<div class="modal fade" id="targetModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><span class="m-ico"><i class="fas fa-bullseye"></i></span>Monthly Sales Target</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted">Set the target as a percentage of total expected inventory value, or as a fixed amount in KSh.</p>
+        <div class="mb-3">
+          <label class="form-label">Calculation mode</label>
           <select id="targetModeSelect" class="form-select" onchange="window.toggleTargetInputMode()">
-            <option value="percentage" selected>Percentage of Total Expected Stock Value (%)</option>
-            <option value="fixed">Fixed Target Amount (KSh)</option>
+            <option value="percentage" selected>Percentage of expected stock value (%)</option>
+            <option value="fixed">Fixed amount (KSh)</option>
           </select>
         </div>
-        <div class="mb-3" id="targetPercentageGroup">
-          <label class="form-label small fw-bold">Target Percentage (%)</label>
+        <div class="mb-1" id="targetPercentageGroup">
+          <label class="form-label">Target percentage</label>
           <div class="input-group">
             <input type="number" id="targetPercentageInput" class="form-control" placeholder="e.g. 50" min="1" max="500" value="50">
             <span class="input-group-text">%</span>
           </div>
-          <div class="form-text">e.g. 50% means target sales = half of current inventory expected value.</div>
+          <div class="form-text">50% means target sales = half of current inventory expected value.</div>
         </div>
-        <div class="mb-3 d-none" id="targetFixedGroup">
-          <label class="form-label small fw-bold">Fixed Monthly Target Amount (KSh)</label>
+        <div class="mb-1 d-none" id="targetFixedGroup">
+          <label class="form-label">Fixed monthly target</label>
           <div class="input-group">
             <span class="input-group-text">KSh</span>
             <input type="number" id="targetFixedInput" class="form-control" placeholder="e.g. 100000">
           </div>
         </div>
       </div>
-      <div class="modal-footer py-2">
-        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
-        <button type="button" class="btn btn-primary btn-sm" onclick="window.saveTargetSettings()">Save Target</button>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-soft" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-custom" onclick="window.saveTargetSettings()">Save Target</button>
       </div>
     </div>
   </div>
 </div>
 
-<!-- Realtime Staff Notifications Modal -->
-<div class="modal fade" id="notificationsModal" tabindex="-1">
-  <div class="modal-dialog modal-lg">
-    <div class="modal-content bg-dark text-white border-secondary">
-      <div class="modal-header bg-dark text-white border-secondary py-2 d-flex justify-content-between align-items-center">
-        <h5 class="modal-title fs-6 text-white mb-0"><i class="fas fa-bell me-2 text-warning"></i>System Activity & Restock Notifications</h5>
+<!-- Notifications -->
+<div class="modal fade" id="notificationsModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><span class="m-ico"><i class="fas fa-bell"></i></span>Activity &amp; Restock Notifications</h5>
         <div class="d-flex align-items-center gap-2">
-          <button type="button" class="btn btn-outline-light btn-sm py-0 px-2" style="font-size: 11px;" onclick="window.markAllNotifsAsRead()">
-            <i class="fas fa-check-double me-1"></i>Mark All Read
-          </button>
-          <button type="button" class="btn btn-outline-danger btn-sm py-0 px-2 admin-only d-none" style="font-size: 11px;" onclick="window.clearAllNotifications()">
-            <i class="fas fa-trash-alt me-1"></i>Clear All
-          </button>
-          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          <button type="button" class="btn btn-soft btn-sm" onclick="window.markAllNotifsAsRead()"><i class="fas fa-check-double me-1"></i>Mark all read</button>
+          <button type="button" class="btn btn-outline-danger btn-sm admin-only d-none" onclick="window.clearAllNotifications()"><i class="fas fa-trash-can me-1"></i>Clear all</button>
+          <button type="button" class="btn-close ms-1" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
       </div>
-      <div class="modal-body p-3 bg-dark text-white">
-        <div id="notificationsList" class="list-group list-group-flush bg-dark">
-          <!-- Dynamically populated real-time restock & product notifications -->
-        </div>
+      <div class="modal-body" style="background: var(--surface-2)">
+        <div id="notificationsList"></div>
       </div>
-      <div class="modal-footer bg-dark text-white border-secondary py-2 d-flex justify-content-between">
-        <button type="button" class="btn btn-outline-success btn-sm text-white" onclick="if(typeof downloadRestocksPdfBtn !== 'undefined') downloadRestocksPdfBtn.click(); else window.downloadSingleTablePdf('restock_table_1', 'Restock History', 'Restock_Report');">
-          <i class="fas fa-file-pdf me-1"></i> Download Full Restock History PDF
+      <div class="modal-footer justify-content-between">
+        <button type="button" class="btn btn-soft btn-sm" onclick="if(typeof downloadRestocksPdfBtn !== 'undefined') downloadRestocksPdfBtn.click(); else window.downloadSingleTablePdf('restock_table_1', 'Restock History', 'Restock_Report');">
+          <i class="fas fa-file-pdf me-1 text-danger"></i>Full Restock History PDF
         </button>
-        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-custom btn-sm" data-bs-dismiss="modal">Close</button>
       </div>
     </div>
   </div>
 </div>
-    <!-- Toast Container (Centered via CSS) -->
+
+<!-- Toast -->
 <div class="toast-container position-fixed p-3">
   <div id="liveToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
     <div class="toast-header" id="toastHeader">
@@ -765,104 +1423,6 @@
     <div class="toast-body" id="toastBody"></div>
   </div>
 </div>
-<div class="tab-pane fade" id="staffManagementTab" role="tabpanel">
-    
-    <div class="card my-4">
-        <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
-            <h5 class="mb-0">👥 Staff Profile Management System</h5>
-        </div>
-        
-        <div class="card-body">
-            <div class="row g-3 mb-4">
-                <div class="col-md-3">
-                    <input type="text" id="staffName" class="form-control" placeholder="Full Employee Name">
-                </div>
-                <div class="col-md-3">
-                    <input type="email" id="staffEmail" class="form-control" placeholder="Email (Login ID)">
-                </div>
-                <div class="col-md-3">
-                    <input type="text" id="staffPassword" class="form-control" placeholder="Operational Password">
-                </div>
-                <div class="col-md-2">
-                    <select id="staffRole" class="form-select">
-                        <option value="staff" selected>Staff Member</option>
-                        <option value="admin">Administrator</option>
-                    </select>
-                </div>
-                <div class="col-md-1">
-                    <button id="addStaffBtn" class="btn btn-primary w-100" onclick="window.saveStaffMember()">Save</button>
-                </div>
-            </div>
-
-            <div class="table-responsive">
-                <table class="table table-hover align-middle">
-                    <thead class="table-light">
-                        <tr>
-                            <th>Employee Profile</th>
-                            <th>Email Username</th>
-                            <th>Assigned Tier</th>
-                            <th>Status</th>
-                            <th>Operational Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="staffTableBody">
-                        </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-
-</div>
-<div class="tab-pane fade" id="attendanceTab">
-    <div class="p-3">
-        <h4>Staff Clock in & out</h4>
-        
-        <div class="mb-3">
-           <button onclick="window.clockIn()" class="btn btn-success">Clock In</button>
-<button onclick="window.clockOut()" class="btn btn-danger">Clock Out</button>
-        </div>
-        
-        <div class="mt-4">
-            <div class="d-flex justify-content-between align-items-center">
-                <h5>Records</h5>
-                <button class="btn btn-primary mb-3 admin-only d-none" onclick="exportAttendance()">Download PDF Report</button>
-            </div>
-            
-            <table class="table table-bordered">
-                <thead>
-                    <tr>
-                        <th>Date</th>
-                        <th class="admin-only d-none">Staff</th>
-                        <th>In</th>
-                        <th>Out</th>
-                        <th class="admin-only d-none">Action</th>
-                    </tr>
-                </thead>
-                <tbody id="attendanceTable"></tbody>
-            </table>
-        </div>
-    </div>
-</div>
-<style>
-/* Centering and Dark Theme (As before) */
-.toast-container { top: 50% !important; left: 50% !important; transform: translate(-50%, -50%) !important; width: 350px; z-index: 9999; }
-#liveToast { border-radius: 15px; box-shadow: 0 10px 40px rgba(0,0,0,0.5); background: #2c3e50; color: #ecf0f1; border: none; overflow: hidden; }
-.toast-body { padding: 25px; text-align: center; color: white; }
-
-/* The Success Tick Animation */
-.checkmark-circle { width: 50px; height: 50px; margin: 0 auto 15px; border-radius: 50%; stroke: #2ecc71; stroke-width: 4; stroke-miterlimit: 10; fill: none; animation: scale .3s ease-in-out; }
-.checkmark { transform-origin: 50% 50%; stroke-dasharray: 48; stroke-dashoffset: 48; animation: stroke .6s cubic-bezier(0.65, 0, 0.45, 1) forwards .3s; }
-@keyframes stroke { 100% { stroke-dashoffset: 0; } }
-@keyframes scale { 0%, 100% { transform: none; } 50% { transform: scale3d(1.1, 1.1, 1); } }
-
-/* Spinner */
-.spinner-loader { width: 40px; height: 40px; border: 4px solid #34495e; border-top: 4px solid #3498db; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 15px; }
-@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-</style>
-
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
