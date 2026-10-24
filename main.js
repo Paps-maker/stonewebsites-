@@ -2471,6 +2471,7 @@ if (paymentCompleteBtn) {
 
         const processCheckout = async () => {
             const processedItems = [];
+            const lowStock = [];
             let totalAmount = 0;
             const batch = window.db.batch();
 
@@ -2503,6 +2504,12 @@ if (paymentCompleteBtn) {
                 // Batch stock reduction
                 const newStock = Math.max(currentStock - requestedQty, 0);
                 batch.update(prodRef, { stock: newStock });
+
+                // Only flag items that just crossed their minimum level, so a repeat sale doesn't re-alert
+                const minLevel = parseFloat(pData.min) || 0;
+                if (currentStock > minLevel && newStock <= minLevel) {
+                    lowStock.push({ name: c.name, stock: newStock, min: minLevel });
+                }
             }
 
             // 2. Add Sale transaction record to batch
@@ -2518,6 +2525,7 @@ if (paymentCompleteBtn) {
 
             // 3. Execute atomic batch write (all or nothing)
             await batch.commit();
+            return { items: processedItems, total: totalAmount, lowStock };
         };
 
         // 10-Second Timeout Race Controller
@@ -2526,7 +2534,18 @@ if (paymentCompleteBtn) {
         });
 
         try {
-            await Promise.race([processCheckout(), timeoutPromise]);
+            const saleResult = await Promise.race([processCheckout(), timeoutPromise]);
+
+            try {
+                window.notifySale({
+                    customer: customerName,
+                    payment: paymentMethodEl ? paymentMethodEl.value : "Cash",
+                    transaction: transCodeEl ? transCodeEl.value : "",
+                    ...saleResult
+                });
+            } catch (alertErr) {
+                console.warn("Sale alert failed:", alertErr);
+            }
 
             // Clear cart & reset inputs
             cart = [];
@@ -4603,6 +4622,14 @@ window.saveDayClosing = async () => {
         });
 
         hideModalById("closeDayModal");
+        try {
+            window.notifyDayClose({
+                label: sum.label, total: sum.total, expected, counted, difference,
+                closedBy: getCurrentUserEmail() || "unknown"
+            });
+        } catch (alertErr) {
+            console.warn("Day close alert failed:", alertErr);
+        }
         const msg = difference === 0 ? "Cash balanced perfectly."
             : difference < 0 ? `Cash is short by ${insightMoney(Math.abs(difference))}.`
             : `Cash is over by ${insightMoney(difference)}.`;
@@ -4690,12 +4717,329 @@ window.db.collection("day_closings").orderBy("closedAt", "desc").limit(60).onSna
    SECTION 13: UI NAVIGATION & SCROLL HELPERS
    ========================================================================== */
 
+/* ==========================================================================
+   SECTION 12C: ALERTS (Telegram, WhatsApp via CallMeBot, Email via Web3Forms) - set up by the admin
+   ========================================================================== */
+
+window.alertConfig = {
+    enabled: false,
+    // useTelegram / useWhatsApp are left undefined until saved, so older single-"channel" settings still work
+    tgToken: "", tgChatId: "",
+    phone: "", apiKey: "",
+    useEmail: false, emailKey: "", emailImportantOnly: false,
+    onSale: true, onLowStock: true, onDayClose: true
+};
+
+// Live copy of the admin's alert settings (read by every device so any till can send the alert)
+window.db.collection("settings").doc("alerts").onSnapshot(doc => {
+    if (doc.exists) window.alertConfig = { ...window.alertConfig, ...doc.data() };
+}, err => console.warn("Alerts settings listener:", err));
+
+/**
+ * Turns "0712 345 678" / "+254712345678" into 254712345678 (Kenya numbers by default)
+ */
+function normalizePhone(raw) {
+    let digits = String(raw || "").replace(/\D/g, "");
+    if (digits.startsWith("0") && digits.length === 10) digits = "254" + digits.slice(1);
+    return digits;
+}
+
+// Bot tokens only use letters, digits, _ - and : so anything else is stripped
+const cleanToken = (t) => String(t || "").replace(/[^A-Za-z0-9_:\-]/g, "");
+
+/**
+ * Channels that are switched on AND fully filled in.
+ * (Older saved settings only had a single "channel" field, which is still understood.)
+ */
+function activeChannels(c) {
+    if (!c || !c.enabled) return [];
+    const useTg = c.useTelegram !== undefined ? c.useTelegram : c.channel !== "whatsapp";
+    const useWa = c.useWhatsApp !== undefined ? c.useWhatsApp : c.channel === "whatsapp";
+    const out = [];
+    if (useTg && c.tgToken && c.tgChatId) out.push("telegram");
+    if (useWa && c.phone && c.apiKey) out.push("whatsapp");
+    if (c.useEmail && c.emailKey) out.push("email");
+    return out;
+}
+
+function sendWhatsApp(phone, apiKey, text) {
+    const url = `https://api.callmebot.com/whatsapp.php?phone=${encodeURIComponent(phone)}&text=${encodeURIComponent(text)}&apikey=${encodeURIComponent(apiKey)}`;
+    // no-cors: the browser cannot read CallMeBot's reply, so success can't be confirmed from here
+    return fetch(url, { mode: "no-cors" }).then(() => ({ ok: true, unconfirmed: true })).catch(() => ({ ok: false, error: "Could not reach the sending service." }));
+}
+
+async function sendTelegram(token, chatId, text) {
+    try {
+        const res = await fetch(`https://api.telegram.org/bot${cleanToken(token)}/sendMessage`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            // plain text on purpose: names or emails containing _ or * would break Markdown
+            body: JSON.stringify({ chat_id: chatId, text: text.replace(/\*/g, "") })
+        });
+        const data = await res.json();
+        return data.ok ? { ok: true } : { ok: false, error: data.description || "Telegram rejected the message." };
+    } catch (e) {
+        return { ok: false, error: "Could not reach Telegram. Check the internet connection." };
+    }
+}
+
+async function sendEmail(accessKey, text) {
+    const plain = text.replace(/\*/g, "");
+    try {
+        const res = await fetch("https://api.web3forms.com/submit", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Accept": "application/json" },
+            body: JSON.stringify({
+                access_key: accessKey,
+                subject: "Madollar: " + plain.split("\n")[0],
+                from_name: "Madollar System",
+                message: plain
+            })
+        });
+        const data = await res.json();
+        return data.success ? { ok: true } : { ok: false, error: data.message || "The email service rejected the request." };
+    } catch (e) {
+        return { ok: false, error: "Could not reach the email service. Check the internet connection." };
+    }
+}
+
+function sendOnChannel(channel, c, text) {
+    if (channel === "telegram") return sendTelegram(c.tgToken, c.tgChatId, text);
+    if (channel === "whatsapp") return sendWhatsApp(c.phone, c.apiKey, text);
+    return sendEmail(c.emailKey, text);
+}
+
+// Messages go out one at a time with a pause, because the services limit bursts
+const alertQueue = [];
+let alertBusy = false;
+
+async function drainAlertQueue() {
+    if (alertBusy) return;
+    alertBusy = true;
+    while (alertQueue.length) {
+        const { text, type } = alertQueue.shift();
+        const c = window.alertConfig || {};
+        const channels = activeChannels(c).filter(ch => {
+            // Email goes out for every alert unless the admin chose "only low stock and day closing"
+            if (ch === "email" && c.emailImportantOnly === true && type === "onSale") return false;
+            return true;
+        });
+        const results = await Promise.all(channels.map(ch => sendOnChannel(ch, c, text)));
+        results.forEach((r, i) => { if (!r.ok) console.warn(`Alert not sent via ${channels[i]}:`, r.error); });
+        await new Promise(r => setTimeout(r, channels.includes("whatsapp") ? 2500 : 1200));
+    }
+    alertBusy = false;
+}
+
+/**
+ * Queues an alert. `type` is the setting that must be on (onSale, onLowStock, onDayClose)
+ */
+window.sendAlert = (text, type) => {
+    const c = window.alertConfig || {};
+    if (activeChannels(c).length === 0) return;
+    if (type && c[type] === false) return;
+    alertQueue.push({ text, type });
+    drainAlertQueue();
+};
+
+window.notifySale = (sale) => {
+    const lines = (sale.items || []).map(i => `• ${window.toMixedFraction(i.qty)} x ${i.name} (KSh ${((parseFloat(i.price) || 0) * (parseFloat(i.qty) || 0)).toLocaleString()})`);
+    window.sendAlert(
+        `🧾 *New sale* - KSh ${(sale.total || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
+        `Customer: ${sale.customer || "Guest"}\n` +
+        `Payment: ${sale.payment || "Cash"}${sale.transaction ? " (" + sale.transaction + ")" : ""}\n` +
+        `${lines.join("\n")}\n` +
+        `By: ${getCurrentUserEmail() || "unknown"}\n` +
+        `${new Date().toLocaleString()}`,
+        "onSale"
+    );
+
+    if (sale.lowStock && sale.lowStock.length) {
+        window.sendAlert(
+            `⚠️ *Low stock*\n` +
+            sale.lowStock.map(p => `• ${p.name}: ${window.toMixedFraction(p.stock)} left (min ${window.toMixedFraction(p.min)})`).join("\n"),
+            "onLowStock"
+        );
+    }
+};
+
+window.notifyDayClose = (c) => {
+    const status = c.difference === 0 ? "✅ Balanced"
+        : c.difference < 0 ? `❌ SHORT by KSh ${Math.abs(c.difference).toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+        : `⚠️ OVER by KSh ${c.difference.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+    window.sendAlert(
+        `📒 *Day closed* - ${c.label}\n` +
+        `Total sales: KSh ${c.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}\n` +
+        `Expected cash: KSh ${c.expected.toLocaleString(undefined, { minimumFractionDigits: 2 })}\n` +
+        `Counted: KSh ${c.counted.toLocaleString(undefined, { minimumFractionDigits: 2 })}\n` +
+        `${status}\n` +
+        `Closed by: ${c.closedBy}`,
+        "onDayClose"
+    );
+};
+
+/* ---- settings window ---- */
+window.toggleAlertChannel = () => {
+    [["alertsUseTelegram", "alertsTelegramFields"], ["alertsUseWhatsApp", "alertsWhatsAppFields"], ["alertsUseEmail", "alertsEmailFields"]]
+        .forEach(([checkId, bodyId]) => {
+            document.getElementById(bodyId).classList.toggle("d-none", !document.getElementById(checkId).checked);
+        });
+};
+
+window.openAlertsModal = () => {
+    if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
+    const c = window.alertConfig || {};
+    const useTg = c.useTelegram !== undefined ? c.useTelegram : c.channel !== "whatsapp";
+    const useWa = c.useWhatsApp !== undefined ? c.useWhatsApp : c.channel === "whatsapp";
+
+    document.getElementById("alertsEnabled").checked = !!c.enabled;
+    document.getElementById("alertsUseTelegram").checked = !!useTg;
+    document.getElementById("alertsUseWhatsApp").checked = !!useWa;
+    document.getElementById("alertsUseEmail").checked = !!c.useEmail;
+    document.getElementById("alertsTgToken").value = c.tgToken || "";
+    document.getElementById("alertsTgChat").value = c.tgChatId || "";
+    document.getElementById("alertsPhone").value = c.phone || "";
+    document.getElementById("alertsApiKey").value = c.apiKey || "";
+    document.getElementById("alertsEmailKey").value = c.emailKey || "";
+    document.getElementById("alertsEmailImportant").checked = c.emailImportantOnly === true;
+    document.getElementById("alertsOnSale").checked = c.onSale !== false;
+    document.getElementById("alertsOnLowStock").checked = c.onLowStock !== false;
+    document.getElementById("alertsOnDayClose").checked = c.onDayClose !== false;
+    document.getElementById("alertsStatus").textContent = "";
+    window.toggleAlertChannel();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById("alertsModal")).show();
+};
+
+function readAlertForm() {
+    return {
+        enabled: document.getElementById("alertsEnabled").checked,
+        useTelegram: document.getElementById("alertsUseTelegram").checked,
+        tgToken: document.getElementById("alertsTgToken").value.trim(),
+        tgChatId: document.getElementById("alertsTgChat").value.trim(),
+        useWhatsApp: document.getElementById("alertsUseWhatsApp").checked,
+        phone: normalizePhone(document.getElementById("alertsPhone").value),
+        apiKey: document.getElementById("alertsApiKey").value.trim(),
+        useEmail: document.getElementById("alertsUseEmail").checked,
+        emailKey: document.getElementById("alertsEmailKey").value.trim(),
+        emailImportantOnly: document.getElementById("alertsEmailImportant").checked,
+        onSale: document.getElementById("alertsOnSale").checked,
+        onLowStock: document.getElementById("alertsOnLowStock").checked,
+        onDayClose: document.getElementById("alertsOnDayClose").checked
+    };
+}
+
+/**
+ * Lists what is missing for every channel that is ticked (empty list = good to go)
+ */
+function alertFormProblems(f) {
+    const problems = [];
+    if (!f.useTelegram && !f.useWhatsApp && !f.useEmail) problems.push("Tick at least one place to send alerts to.");
+    if (f.useTelegram && (!f.tgToken || !f.tgChatId)) problems.push("Telegram needs the bot token and your chat ID.");
+    if (f.useWhatsApp && (f.phone.length < 10 || !f.apiKey)) problems.push("WhatsApp needs your number (with country code) and the CallMeBot key.");
+    if (f.useEmail && !f.emailKey) problems.push("Email needs your Web3Forms access key.");
+    return problems;
+}
+
+window.saveAlertSettings = async () => {
+    if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
+
+    const f = readAlertForm();
+    if (f.enabled) {
+        const problems = alertFormProblems(f);
+        if (problems.length) return Swal.fire("Details needed", problems.join("<br>"), "warning");
+    }
+
+    try {
+        await window.db.collection("settings").doc("alerts").set({
+            ...f,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        hideModalById("alertsModal");
+        Swal.fire({ icon: "success", title: f.enabled ? "Alerts are on" : "Alerts are off", timer: 1500, showConfirmButton: false });
+    } catch (err) {
+        Swal.fire("Could not save", err.message, "error");
+    }
+};
+
+window.sendAlertTest = async () => {
+    const f = readAlertForm();
+    const status = document.getElementById("alertsStatus");
+    status.style.whiteSpace = "pre-line";
+
+    const problems = alertFormProblems(f);
+    if (problems.length) {
+        status.className = "small mt-2 text-warning";
+        status.textContent = problems.join("\n");
+        return;
+    }
+
+    status.className = "small mt-2 text-muted";
+    status.textContent = "Sending...";
+
+    const text = `✅ Madollar test message. Alerts are working! (${new Date().toLocaleTimeString()})`;
+    const channels = [];
+    if (f.useTelegram) channels.push(["telegram", "Telegram"]);
+    if (f.useWhatsApp) channels.push(["whatsapp", "WhatsApp"]);
+    if (f.useEmail) channels.push(["email", "Email"]);
+
+    const results = await Promise.all(channels.map(([ch]) => sendOnChannel(ch, f, text)));
+    const lines = results.map((r, i) => {
+        const name = channels[i][1];
+        if (!r.ok) return `✗ ${name}: ${r.error}`;
+        return r.unconfirmed ? `• ${name}: sent (can take a minute, cannot be confirmed)` : `✓ ${name}: delivered`;
+    });
+    status.className = "small mt-2 " + (results.every(r => r.ok) ? "text-success" : "text-danger");
+    status.textContent = lines.join("\n");
+};
+
+/**
+ * Looks up the admin's Telegram chat ID from the bot's latest message (the admin must press Start in the bot first)
+ */
+window.findTelegramChatId = async () => {
+    const token = document.getElementById("alertsTgToken").value.trim();
+    const status = document.getElementById("alertsStatus");
+    if (!token) {
+        status.className = "small mt-2 text-warning";
+        status.textContent = "Paste the bot token first.";
+        return;
+    }
+    status.className = "small mt-2 text-muted";
+    status.textContent = "Looking for your chat...";
+    try {
+        const res = await fetch(`https://api.telegram.org/bot${cleanToken(token)}/getUpdates`);
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.description || "Telegram rejected the token.");
+        const msgs = (data.result || []).map(u => u.message || u.channel_post || u.my_chat_member).filter(Boolean);
+        const last = msgs.length ? msgs[msgs.length - 1] : null;
+        if (!last || !last.chat) {
+            status.className = "small mt-2 text-warning";
+            status.textContent = "No messages found. Open your bot in Telegram, press Start, send \"hi\", then try again.";
+            return;
+        }
+        document.getElementById("alertsTgChat").value = last.chat.id;
+        status.className = "small mt-2 text-success";
+        status.textContent = `Found it (${last.chat.first_name || last.chat.title || "chat"}). Now press Send test message.`;
+    } catch (err) {
+        status.className = "small mt-2 text-danger";
+        status.textContent = err.message;
+    }
+};
+
+
 /**
  * "What's new" popup: shown once per person after an update.
  * Add a NEW release at the TOP of APP_RELEASES (with a new id) whenever you ship changes.
  * Items marked admin:true are only shown to admins.
  */
 const APP_RELEASES = [
+    {
+        id: "2026.10.34",
+        date: "24 Oct 2026",
+        title: "Phone alerts",
+        items: [
+            { icon: "fa-paper-plane", admin: true, text: "New Alerts button in the top bar: get a Telegram, WhatsApp or email message for every sale, low stock and day closing results. Switch alerts on or off and choose which ones you want." }
+        ]
+    },
     {
         id: "2026.10.32",
         date: "24 Oct 2026",
@@ -4750,7 +5094,7 @@ window.showWhatsNew = (force = false) => {
                 <div class="wn-head"><strong>${r.title}</strong><span>${r.date}</span></div>
                 ${items.map(i => `
                     <div class="wn-item">
-                        <span class="wn-ico"><i class="fas ${i.icon}"></i></span>
+                        <span class="wn-ico"><i class="${/\bfab\b/.test(i.icon) ? "" : "fas "}${i.icon}"></i></span>
                         <span>${i.text}${i.admin ? ' <span class="wn-tag">Admin</span>' : ''}</span>
                     </div>`).join("")}
             </div>`;

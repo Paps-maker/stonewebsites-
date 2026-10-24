@@ -502,6 +502,23 @@
   .cd-pill.warn { background: rgba(245, 158, 11, .2); color: #f59e0b; border-color: transparent; }
   html[data-theme="light"] .cd-pill.warn { color: #b45309; background: #fef3c7; }
 
+  .al-channel { border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); margin-bottom: 10px; overflow: hidden; }
+  .al-ch-head { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; margin: 0; cursor: pointer; }
+  .al-ch-head small { display: block; color: var(--muted); font-size: .76rem; }
+  .al-ch-head .form-check-input { margin-top: 4px; flex-shrink: 0; }
+  .al-ch-body { padding: 4px 14px 14px; border-top: 1px dashed var(--line); padding-top: 14px; }
+  .al-ch-body .al-opt { background: var(--surface); }
+
+  /* WhatsApp alerts */
+  .al-master { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line); }
+  .al-options { display: flex; flex-direction: column; gap: 8px; }
+  .al-opt { display: flex; gap: 12px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); cursor: pointer; margin: 0; }
+  .al-opt:hover { border-color: var(--brand); }
+  .al-opt small { display: block; color: var(--muted); font-size: .76rem; }
+  .al-opt .form-check-input { margin-top: 3px; flex-shrink: 0; }
+  .al-help { border: 1px dashed var(--line); border-radius: 12px; padding: 10px 14px; background: var(--surface-2); }
+  .al-help summary { cursor: pointer; font-weight: 600; font-size: .86rem; }
+
   /* What's new */
   .wn-release + .wn-release { margin-top: 18px; padding-top: 16px; border-top: 1px dashed var(--line); }
   .wn-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 8px; }
@@ -700,6 +717,9 @@
             <span>Low stock</span>
             <span id="lowStockBadge">0</span>
           </div>
+          <button class="btn btn-top admin-only d-none" onclick="window.openAlertsModal()" title="Phone alerts">
+            <i class="fas fa-paper-plane"></i><span class="btn-label ms-1">Alerts</span>
+          </button>
           <button class="btn btn-top" onclick="window.openNotificationsModal()" title="View Notifications">
             <i class="fas fa-bell"></i><span class="btn-label ms-1">Notifications</span>
             <span id="notifBadge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none">0</span>
@@ -1468,6 +1488,131 @@
   </div>
 </div>
 
+<!-- Phone alerts (admin) -->
+<div class="modal fade" id="alertsModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><span class="m-ico ic-green"><i class="fas fa-paper-plane"></i></span>Phone Alerts</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="al-master mb-3">
+          <div>
+            <div class="fw-semibold">Send alerts to my phone</div>
+            <div class="small text-muted">Turn off to stop all messages.</div>
+          </div>
+          <div class="form-check form-switch m-0">
+            <input class="form-check-input" type="checkbox" role="switch" id="alertsEnabled" style="width:2.6em;height:1.4em">
+          </div>
+        </div>
+
+        <div class="fw-semibold small mb-2">Where should I send them? <span class="text-muted fw-normal">(tick one or more)</span></div>
+
+        <!-- Telegram -->
+        <div class="al-channel">
+          <label class="al-ch-head">
+            <input class="form-check-input" type="checkbox" id="alertsUseTelegram" onchange="window.toggleAlertChannel()">
+            <span><b><i class="fab fa-telegram me-1" style="color:#2aabee"></i>Telegram</b><small>Instant messages. Delivery is confirmed.</small></span>
+          </label>
+          <div id="alertsTelegramFields" class="al-ch-body d-none">
+            <div class="mb-3">
+              <label class="form-label" for="alertsTgToken">Bot token</label>
+              <input type="text" id="alertsTgToken" class="form-control" placeholder="123456789:AAH..." autocomplete="off">
+            </div>
+            <div class="mb-3">
+              <label class="form-label" for="alertsTgChat">Your chat ID</label>
+              <div class="input-group">
+                <input type="text" id="alertsTgChat" class="form-control" placeholder="e.g. 123456789" autocomplete="off">
+                <button class="btn btn-soft" type="button" onclick="window.findTelegramChatId()">Find it for me</button>
+              </div>
+            </div>
+            <details class="al-help">
+              <summary><i class="fas fa-circle-question me-1"></i>How do I set this up? (one-time, 2 minutes)</summary>
+              <ol class="small mb-1 mt-2 ps-3">
+                <li>Open Telegram and search for <b>@BotFather</b>. Send it <b>/newbot</b>, then choose a name and a username ending in "bot".</li>
+                <li>BotFather replies with a <b>token</b> (a long code like 123456:ABC...). Paste it in the Bot token box.</li>
+                <li>Search for your new bot in Telegram, open it, press <b>Start</b> and send "hi".</li>
+                <li>Come back here and press <b>Find it for me</b>, then <b>Send test message</b>.</li>
+              </ol>
+            </details>
+          </div>
+        </div>
+
+        <!-- WhatsApp -->
+        <div class="al-channel">
+          <label class="al-ch-head">
+            <input class="form-check-input" type="checkbox" id="alertsUseWhatsApp" onchange="window.toggleAlertChannel()">
+            <span><b><i class="fab fa-whatsapp me-1" style="color:#25d366"></i>WhatsApp</b><small>Messages to your WhatsApp via CallMeBot.</small></span>
+          </label>
+          <div id="alertsWhatsAppFields" class="al-ch-body d-none">
+            <div class="row g-3 mb-3">
+              <div class="col-md-6">
+                <label class="form-label" for="alertsPhone">Your WhatsApp number</label>
+                <input type="tel" id="alertsPhone" class="form-control" placeholder="0712 345 678 or 254712345678">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="alertsApiKey">CallMeBot key</label>
+                <input type="text" id="alertsApiKey" class="form-control" placeholder="e.g. 1234567" autocomplete="off">
+              </div>
+            </div>
+            <details class="al-help">
+              <summary><i class="fas fa-circle-question me-1"></i>How do I get my key?</summary>
+              <ol class="small mb-1 mt-2 ps-3">
+                <li>Open <a href="https://www.callmebot.com/blog/free-api-whatsapp-messages/" target="_blank" rel="noopener">callmebot.com/blog/free-api-whatsapp-messages</a> and follow the setup steps.</li>
+                <li>When their WhatsApp bot is full, no new keys are issued. Use Telegram or Email instead.</li>
+              </ol>
+            </details>
+          </div>
+        </div>
+
+        <!-- Email -->
+        <div class="al-channel mb-3">
+          <label class="al-ch-head">
+            <input class="form-check-input" type="checkbox" id="alertsUseEmail" onchange="window.toggleAlertChannel()">
+            <span><b><i class="fas fa-envelope me-1 text-warning"></i>Email</b><small>An email for every alert, sent through Web3Forms.</small></span>
+          </label>
+          <div id="alertsEmailFields" class="al-ch-body d-none">
+            <div class="mb-3">
+              <label class="form-label" for="alertsEmailKey">Web3Forms access key</label>
+              <input type="text" id="alertsEmailKey" class="form-control" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" autocomplete="off">
+            </div>
+            <label class="al-opt mb-3">
+              <input class="form-check-input" type="checkbox" id="alertsEmailImportant">
+              <span><b>Only email me low stock and day closing</b><small>Turn this on if you don't want an email for every sale. Sales alerts will then only go to Telegram or WhatsApp.</small></span>
+            </label>
+            <details class="al-help">
+              <summary><i class="fas fa-circle-question me-1"></i>How do I get my access key? (one-time, 1 minute)</summary>
+              <ol class="small mb-1 mt-2 ps-3">
+                <li>Open <a href="https://web3forms.com" target="_blank" rel="noopener">web3forms.com</a>, type the email address you want alerts sent to, and press <b>Create Access Key</b>.</li>
+                <li>They email you the key. Paste it in the box above. Alerts will arrive at that same email address.</li>
+                <li>Press <b>Send test message</b>, then check your inbox (and spam folder the first time).</li>
+              </ol>
+            </details>
+          </div>
+        </div>
+
+        <div class="fw-semibold small mb-2">Send me a message when...</div>
+        <div class="al-options mb-2">
+          <label class="al-opt"><input class="form-check-input" type="checkbox" id="alertsOnSale"><span><b>A sale is made</b><small>Customer, items, payment method and total</small></span></label>
+          <label class="al-opt"><input class="form-check-input" type="checkbox" id="alertsOnLowStock"><span><b>Stock runs low</b><small>When an item drops to its minimum level</small></span></label>
+          <label class="al-opt"><input class="form-check-input" type="checkbox" id="alertsOnDayClose"><span><b>A day is closed</b><small>Cash counted, and whether it was balanced, short or over</small></span></label>
+        </div>
+
+        <div class="small text-muted mt-3"><i class="fas fa-circle-info me-1"></i>Alerts are sent from the phone that makes the sale, so they need an internet connection at that moment. Each alert goes to every place you ticked.</div>
+        <div id="alertsStatus" class="small mt-2"></div>
+      </div>
+      <div class="modal-footer justify-content-between">
+        <button type="button" class="btn btn-soft" onclick="window.sendAlertTest()"><i class="fas fa-paper-plane me-1"></i>Send test message</button>
+        <div class="d-flex gap-2">
+          <button type="button" class="btn btn-soft" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-custom" onclick="window.saveAlertSettings()">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- What's new -->
 <div class="modal fade" id="whatsNewModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
@@ -1718,7 +1863,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
 
-<script src="main.js?v=20261033"></script>
+<script src="main.js?v=20261037"></script>
 <script>
   // If a stale cached main.js was loaded (new buttons need its functions), reload once bypassing the cache
   if (typeof window.openAddProductModal !== 'function') {
