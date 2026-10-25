@@ -15,6 +15,7 @@
    SECTION 11 : STOCK REQUISITION SYSTEM
    SECTION 12 : ADMIN STAFF MANAGEMENT MODULE
    SECTION 12B: INSIGHTS (CHARTS), PROFIT & LOSS AND DAY CLOSING
+   SECTION 12E: CATEGORIES, BUSY TIMES AND SMART WARNINGS
    SECTION 13 : UI NAVIGATION & SCROLL HELPERS
    ========================================================================== */
 
@@ -36,6 +37,10 @@ firebase.initializeApp(firebaseConfig);
 
 window.auth = firebase.auth();
 window.db = firebase.firestore();
+
+// Keep a local copy of the data so the app still opens and records sales when the internet drops.
+// Writes made offline are saved on the device and sent automatically when the connection returns.
+window.db.enablePersistence({ synchronizeTabs: true }).catch(err => console.warn("Offline storage not enabled:", err.code));
 
 
 /* ==========================================================================
@@ -70,6 +75,85 @@ const roleBadge = document.getElementById("roleBadge");
 
 
 /* ==========================================================================
+   SECTION 2B: OFFLINE SUPPORT (saved writes, connection badge, install as app)
+   ========================================================================== */
+
+/**
+ * Waits for the server to confirm a write, but stops waiting after a few seconds.
+ * Offline, the write is already saved on the device and syncs later, so the promise would never finish.
+ * Resolves true when confirmed, false when it is still waiting (saved locally).
+ */
+function writeWithGrace(promise, ms = 4000) {
+    promise.catch(err => console.warn("Write failed:", err));
+    return Promise.race([promise.then(() => true), new Promise(resolve => setTimeout(() => resolve(false), ms))]);
+}
+
+// Read options: use the device's saved copy straight away when offline instead of waiting for a timeout
+const readOpts = () => ({ source: navigator.onLine ? "default" : "cache" });
+
+async function safeGet(ref) {
+    try { return await ref.get(readOpts()); } catch (e) { return null; }
+}
+
+(function setupConnectionStatus() {
+    const badge = document.getElementById("offlineBadge");
+    const text = document.getElementById("offlineBadgeText");
+    if (!badge || !text) return;
+    let wasOffline = false;
+
+    const goOffline = () => {
+        wasOffline = true;
+        badge.className = "offline-badge";
+        text.textContent = "Offline - sales are saved on this device";
+    };
+    const goOnline = async () => {
+        badge.className = "offline-badge syncing";
+        text.textContent = "Syncing...";
+        try { await window.db.waitForPendingWrites(); } catch (e) { }
+        badge.className = "offline-badge d-none";
+        if (wasOffline && typeof Swal !== "undefined") {
+            Swal.fire({ toast: true, position: "top", icon: "success", title: "Back online. Everything is synced.", timer: 2500, showConfirmButton: false });
+        }
+        wasOffline = false;
+    };
+
+    window.addEventListener("offline", goOffline);
+    window.addEventListener("online", goOnline);
+    if (!navigator.onLine) goOffline();
+})();
+
+// "Install app" button (shown by the browser when the app can be installed)
+window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    window.deferredInstallPrompt = e;
+    const btn = document.getElementById("installBtn");
+    if (btn) btn.classList.remove("d-none");
+});
+window.addEventListener("appinstalled", () => {
+    window.deferredInstallPrompt = null;
+    const btn = document.getElementById("installBtn");
+    if (btn) btn.classList.add("d-none");
+});
+window.installApp = async () => {
+    const prompt = window.deferredInstallPrompt;
+    if (!prompt) return;
+    prompt.prompt();
+    await prompt.userChoice;
+    window.deferredInstallPrompt = null;
+    const btn = document.getElementById("installBtn");
+    if (btn) btn.classList.add("d-none");
+};
+
+// Service worker: lets the page itself open offline (scoped to this page only)
+if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+    window.addEventListener("load", () => {
+        navigator.serviceWorker.register("liquor-sw.js", { scope: "./liquor.html" })
+            .catch(err => console.warn("Offline page cache not available:", err));
+    });
+}
+
+
+/* ==========================================================================
    SECTION 3: UTILITY, FORMATTING & TARGET HELPERS
    ========================================================================== */
 
@@ -79,6 +163,34 @@ const roleBadge = document.getElementById("roleBadge");
 function isAdmin() {
     const role = (window.currentRole || localStorage.getItem("currentRole") || "").toString().toLowerCase().trim();
     return role === 'admin';
+}
+
+/**
+ * Manager: sits between admin and staff. Can restock, count stock and close days,
+ * but cannot see profit/cost figures or delete records.
+ */
+function isManager() {
+    const role = (window.currentRole || localStorage.getItem("currentRole") || "").toString().toLowerCase().trim();
+    return role === 'manager';
+}
+
+function isManagerOrAdmin() {
+    return isAdmin() || isManager();
+}
+
+/**
+ * Quantity of stock (in bottles) a sale line uses. A tot sale stores how many bottles it represents.
+ */
+function itemStockQty(item) {
+    const v = item.stockQty !== undefined ? parseFloat(item.stockQty) : parseFloat(item.qty);
+    return v || 0;
+}
+
+/**
+ * Product name as shown on sales (tot sales are labelled so they are not mixed up with whole bottles)
+ */
+function itemLabel(item) {
+    return item.unit === "tot" ? `${item.name} (tot)` : item.name;
 }
 
 /**
@@ -152,6 +264,7 @@ function showDashboard() {
     if (typeof window.showWhatsNewWhenReady === "function") {
         setTimeout(() => window.showWhatsNewWhenReady(), 2200);
     }
+    if (typeof window.startSmartWarningTimer === "function") window.startSmartWarningTimer();
 }
 
 /**
@@ -393,10 +506,14 @@ function updateUIByRole(role) {
     document.querySelectorAll(".admin-only").forEach(el => {
         el.classList.toggle("d-none", window.currentRole !== "admin");
     });
+    // Things managers may also use (restock, stock take, close day)
+    document.querySelectorAll(".manager-up").forEach(el => {
+        el.classList.toggle("d-none", window.currentRole !== "admin" && window.currentRole !== "manager");
+    });
 
-    // Re-render products table so Admin Quick Restock & Actions buttons appear immediately
-    if (typeof window.renderProducts === "function" && window.productsCache && window.productsCache.length > 0) {
-        window.renderProducts(window.productsCache);
+    // Re-render products table so Admin / Manager buttons appear immediately
+    if (typeof window.renderProductsFiltered === "function" && window.productsCache && window.productsCache.length > 0) {
+        window.renderProductsFiltered();
     }
     // Re-render sales table so Admin Delete buttons appear immediately
     if (typeof window.filterSalesTable === "function") {
@@ -442,7 +559,7 @@ if (loginBtn) {
         try {
             // Staff Portal Login Flow
             if (window.activePortalMode === "staff") {
-                const userDoc = await window.db.collection("users").doc(emailVal).get();
+                const userDoc = await window.db.collection("users").doc(emailVal).get(readOpts());
 
                 if (!userDoc.exists) {
                     if (loginMsg) loginMsg.textContent = "No registered staff profile found.";
@@ -483,7 +600,7 @@ if (loginBtn) {
                 const check = await window.db.collection("attendance")
                     .where("staffEmail", "==", emailVal)
                     .where("date", "==", today)
-                    .get();
+                    .get(readOpts());
 
                 if (check.empty) {
                     Swal.fire({
@@ -521,13 +638,13 @@ if (loginBtn) {
                             }
 
                             try {
-                                await window.db.collection("attendance").add({
+                                await writeWithGrace(window.db.collection("attendance").add({
                                     staffEmail: emailVal,
                                     date: today,
                                     clockIn: firebase.firestore.FieldValue.serverTimestamp(),
                                     clockOut: null,
                                     location: { lat: latitude, lon: longitude }
-                                });
+                                }));
                                 return true;
                             } catch (err) {
                                 Swal.showValidationMessage(`Database error: ${err.message}`);
@@ -616,6 +733,14 @@ window.auth.onAuthStateChanged(async (user) => {
 
     } catch (err) {
         console.error("Auth error:", err);
+        if (!navigator.onLine) {
+            // Offline: keep the signed-in admin inside the app using the role remembered on this device
+            window.currentRole = localStorage.getItem("currentRole") || "staff";
+            updateUIByRole(window.currentRole);
+            startAttendanceRealtimeListener();
+            showDashboard();
+            return;
+        }
         window.auth.signOut();
     }
 });
@@ -895,7 +1020,7 @@ window.exportAttendance = async () => {
  * Opens the Update Stock modal for a product (Admin only)
  */
 window.openStockModal = (productId, productName) => {
-    if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
+    if (!isManagerOrAdmin()) return Swal.fire("Access Denied", "Managers and admins only", "error");
 
     const prodDoc = (window.productsCache || []).find(d => d.id === productId);
     window.stockModalProduct = { id: productId, name: productName };
@@ -918,7 +1043,7 @@ function closeStockModal() {
 }
 
 window.quickRestock = async (productId, productName) => {
-    if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
+    if (!isManagerOrAdmin()) return Swal.fire("Access Denied", "Managers and admins only", "error");
 
     const inputEl = document.getElementById("stockQtyInput");
     if (!inputEl) return;
@@ -982,7 +1107,9 @@ window.quickRestock = async (productId, productName) => {
  * Dynamic Inventory Adjustments (+ / - buttons with reason, snapshot tracking & real-time notification)
  */
 window.adjustStock = async (productId, productName, operationalMode) => {
-    if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
+    if (!isManagerOrAdmin()) return Swal.fire("Access Denied", "Managers and admins only", "error");
+    // Managers can add stock; reducing stock (losses, corrections) stays with the admin
+    if (operationalMode !== "add" && !isAdmin()) return Swal.fire("Access Denied", "Only an admin can reduce stock", "error");
 
     const qtyEl = document.getElementById("stockQtyInput");
     const reasonEl = document.getElementById("stockReasonInput");
@@ -1088,11 +1215,20 @@ window.renderProducts = function (docs) {
     productsTable.innerHTML = "";
     let lowStockItems = [];
 
+    const admin = isAdmin();
+    const manager = isManagerOrAdmin();
+
+    // Low stock always looks at every product, not just the ones currently filtered on screen
+    (window.productsCache || docs).forEach(d => {
+        const p = d.data();
+        if (parseFloat(p.stock || 0) <= parseFloat(p.min || 0)) lowStockItems.push(p);
+    });
+
     // 1. Build Table Headers Dynamically
-    let headerHTML = `<tr><th>Name</th>`;
-    if (isAdmin()) headerHTML += `<th>Buy</th>`;
+    let headerHTML = `<tr><th>Name</th><th>Category</th>`;
+    if (admin) headerHTML += `<th>Buy</th>`;
     headerHTML += `<th>Sell</th><th>Stock</th><th>Min</th>`;
-    if (isAdmin()) headerHTML += `<th class="text-end">Actions</th>`;
+    if (manager) headerHTML += `<th class="text-end">Actions</th>`;
     headerHTML += `</tr>`;
 
     if (productsHead) productsHead.innerHTML = headerHTML;
@@ -1105,23 +1241,25 @@ window.renderProducts = function (docs) {
         const p = doc.data();
         const id = doc.id;
         const isLow = parseFloat(p.stock || 0) <= parseFloat(p.min || 0);
+        const tots = parseFloat(p.totsPerBottle) || 0;
+        const totPrice = parseFloat(p.totPrice) || 0;
+        const category = (p.category || "").trim();
 
-        if (isLow) lowStockItems.push(p);
-
-        let rowHTML = `<tr class="${isLow ? 'table-danger' : ''}"><td data-label="Product" class="fw-semibold">${p.name}${isLow ? ' <span class="low-stock ms-1">Low</span>' : ''}</td>`;
-        if (isAdmin()) {
+        let rowHTML = `<tr class="${isLow ? 'table-danger' : ''}"><td data-label="Product" class="fw-semibold">${p.name}${isLow ? ' <span class="low-stock ms-1">Low</span>' : ''}${tots > 0 ? ` <span class="tot-tag" title="${tots} tots per bottle">tots</span>` : ''}</td>
+            <td data-label="Category" class="text-muted">${category ? escHtml(category) : '<span class="opacity-50">-</span>'}</td>`;
+        if (admin) {
             rowHTML += `<td data-label="Buy">KSh ${parseFloat(p.buyPrice || 0).toFixed(2)}</td>`;
         }
-        rowHTML += `<td data-label="Sell">KSh ${parseFloat(p.price || 0).toFixed(2)}</td>
-                   <td data-label="Stock"><span class="stock-pill">${window.toMixedFraction(p.stock)}</span></td>
+        rowHTML += `<td data-label="Sell">KSh ${parseFloat(p.price || 0).toFixed(2)}${tots > 0 && totPrice > 0 ? `<small class="text-muted d-block">KSh ${totPrice.toFixed(2)} / tot</small>` : ''}</td>
+                   <td data-label="Stock"><span class="stock-pill">${window.toMixedFraction(p.stock)}</span>${tots > 0 ? `<small class="text-muted d-block">about ${Math.floor((parseFloat(p.stock) || 0) * tots + 1e-6)} tots</small>` : ''}</td>
                    <td data-label="Min" class="text-muted">${window.toMixedFraction(p.min)}</td>`;
 
-        if (isAdmin()) {
+        if (manager) {
             rowHTML += `
             <td class="text-end text-nowrap">
-                <button class="btn btn-sm btn-soft stockBtn" data-id="${id}" title="Add or reduce stock"><i class="fas fa-boxes-packing me-1 text-success"></i>Stock</button>
-                <button class="btn btn-sm btn-soft editBtn" data-id="${id}" title="Edit product"><i class="fas fa-pen text-primary"></i></button>
-                <button class="btn btn-sm btn-soft delBtn" data-id="${id}" title="Delete product"><i class="fas fa-trash-can text-danger"></i></button>
+                <button class="btn btn-sm btn-soft stockBtn" data-id="${id}" title="${admin ? 'Add or reduce stock' : 'Add stock'}"><i class="fas fa-boxes-packing me-1 text-success"></i>Stock</button>
+                ${admin ? `<button class="btn btn-sm btn-soft editBtn" data-id="${id}" title="Edit product"><i class="fas fa-pen text-primary"></i></button>
+                <button class="btn btn-sm btn-soft delBtn" data-id="${id}" title="Delete product"><i class="fas fa-trash-can text-danger"></i></button>` : ''}
             </td>`;
         }
         rowHTML += `</tr>`;
@@ -1129,7 +1267,7 @@ window.renderProducts = function (docs) {
     });
 
     if (!rowsHTML) {
-        const cols = isAdmin() ? 6 : 3 + 1;
+        const cols = 5 + (admin ? 1 : 0) + (manager ? 1 : 0);
         rowsHTML = `<tr><td colspan="${cols}"><div class="empty-state"><i class="fas fa-wine-bottle"></i>No products found.</div></td></tr>`;
     }
 
@@ -1186,6 +1324,12 @@ window.renderProducts = function (docs) {
             if (editPrice) editPrice.value = p.price || 0;
             if (editStock) editStock.value = p.stock || 0;
             if (editMin) editMin.value = p.min || 0;
+            const editCat = document.getElementById("editProdCategory");
+            const editTots = document.getElementById("editProdTots");
+            const editTotPrice = document.getElementById("editProdTotPrice");
+            if (editCat) editCat.value = p.category || "";
+            if (editTots) editTots.value = p.totsPerBottle || "";
+            if (editTotPrice) editTotPrice.value = p.totPrice || "";
 
             const editModalEl = document.getElementById("editProductModal");
             if (editModalEl) bootstrap.Modal.getOrCreateInstance(editModalEl).show();
@@ -1241,7 +1385,7 @@ window.renderProducts = function (docs) {
  */
 window.openAddProductModal = () => {
     if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
-    ["prodName", "prodBuyPrice", "prodPrice", "prodStock", "prodMin"].forEach(id => {
+    ["prodName", "prodBuyPrice", "prodPrice", "prodStock", "prodMin", "prodCategory", "prodTots", "prodTotPrice"].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.value = "";
     });
@@ -1278,6 +1422,12 @@ function initDashboard() {
             const parsedStock = parseFloat(prodStock.value) || 0;
             const pName = prodName.value.trim();
 
+            const totsPerBottle = parseFloat(document.getElementById("prodTots").value) || 0;
+            const totPrice = parseFloat(document.getElementById("prodTotPrice").value) || 0;
+            if (totsPerBottle > 0 && totPrice <= 0) {
+                return Swal.fire("Price per tot needed", "You entered how many tots a bottle holds. Enter the price of one tot too.", "warning");
+            }
+
             try {
                 // Save main product record
                 const docRef = await window.db.collection("products").add({
@@ -1285,7 +1435,10 @@ function initDashboard() {
                     buyPrice: parseFloat(prodBuyPrice.value) || 0,
                     price: parseFloat(prodPrice.value) || 0,
                     stock: parsedStock,
-                    min: parseFloat(prodMin.value) || 0
+                    min: parseFloat(prodMin.value) || 0,
+                    category: document.getElementById("prodCategory").value.trim(),
+                    totsPerBottle,
+                    totPrice
                 });
 
                 // Log to new products history collection
@@ -1313,6 +1466,7 @@ function initDashboard() {
                 hideModalById("addProductModal");
                 Swal.fire("Success!", `Product "${pName}" added to inventory`, "success");
                 prodName.value = prodPrice.value = prodBuyPrice.value = prodStock.value = prodMin.value = "";
+                ["prodCategory", "prodTots", "prodTotPrice"].forEach(id => { const el = document.getElementById(id); if (el) el.value = ""; });
             } catch (err) {
                 Swal.fire("Error", "Failed to add product: " + err.message, "error");
             }
@@ -1323,13 +1477,21 @@ function initDashboard() {
     if (saveEditBtn) {
         saveEditBtn.onclick = async () => {
             if (!editProductId) return;
+            const editTots = parseFloat(document.getElementById("editProdTots").value) || 0;
+            const editTotPrice = parseFloat(document.getElementById("editProdTotPrice").value) || 0;
+            if (editTots > 0 && editTotPrice <= 0) {
+                return Swal.fire("Price per tot needed", "You entered how many tots a bottle holds. Enter the price of one tot too.", "warning");
+            }
             try {
                 await window.db.collection("products").doc(editProductId).update({
                     name: document.getElementById("editProdName").value,
                     buyPrice: parseFloat(document.getElementById("editProdBuyingPrice").value) || 0,
                     price: parseFloat(document.getElementById("editProdPrice").value) || 0,
                     stock: parseFloat(document.getElementById("editProdStock").value) || 0,
-                    min: parseFloat(document.getElementById("editProdMin").value) || 0
+                    min: parseFloat(document.getElementById("editProdMin").value) || 0,
+                    category: document.getElementById("editProdCategory").value.trim(),
+                    totsPerBottle: editTots,
+                    totPrice: editTotPrice
                 });
                 hideModalById("editProductModal");
                 Swal.fire("Updated!", "Product details saved.", "success");
@@ -1343,7 +1505,7 @@ function initDashboard() {
 // Master Products Stream Listener
 window.db.collection("products").onSnapshot(snap => {
     window.productsCache = snap.docs;
-    window.renderProducts(window.productsCache);
+    window.renderProductsFiltered();
 
     const countEl = document.getElementById("productCount");
     if (countEl) countEl.textContent = snap.size;
@@ -1396,14 +1558,7 @@ window.db.collection("products").onSnapshot(snap => {
 // Bind Inventory Search Filter Once
 const searchInput = document.getElementById("searchInput");
 if (searchInput) {
-    searchInput.oninput = (e) => {
-        const term = e.target.value.toLowerCase();
-        const filtered = window.productsCache.filter(doc => {
-            const name = doc.data().name || "";
-            return name.toLowerCase().includes(term);
-        });
-        window.renderProducts(filtered);
-    };
+    searchInput.oninput = () => window.renderProductsFiltered();
 }
 
 
@@ -2201,16 +2356,19 @@ window.openCustomerModal = () => {
     bootstrap.Modal.getOrCreateInstance(document.getElementById("customerModal")).show();
 };
 
+window.customersCache = {};
+window.creditPayments = [];
+
 if (addCustomerBtn) {
     addCustomerBtn.onclick = async () => {
         if (!custName || !custPhone || !custName.value.trim() || !custPhone.value.trim()) {
             return Swal.fire("Missing Info", "Enter both the customer's name and phone number.", "warning");
         }
         try {
-            await window.db.collection("customers").add({ name: custName.value.trim(), phone: custPhone.value.trim() });
+            const confirmed = await writeWithGrace(window.db.collection("customers").add({ name: custName.value.trim(), phone: custPhone.value.trim(), balance: 0 }));
             custName.value = custPhone.value = "";
             hideModalById("customerModal");
-            Swal.fire({ icon: "success", title: "Customer saved", timer: 1200, showConfirmButton: false });
+            Swal.fire({ icon: "success", title: confirmed ? "Customer saved" : "Saved on this device", timer: 1400, showConfirmButton: false });
         } catch (e) {
             Swal.fire("Error", "Could not save customer: " + e.message, "error");
         }
@@ -2219,17 +2377,30 @@ if (addCustomerBtn) {
 
 if (customersTable && posCustomer) {
     window.db.collection("customers").onSnapshot(snap => {
+        const keepSelected = posCustomer.value;
+        const admin = isAdmin();
         let rowsHTML = "";
+        let totalOwed = 0, debtors = 0;
+        window.customersCache = {};
         posCustomer.innerHTML = '<option value="">Guest</option>';
 
-        snap.forEach(doc => {
+        const docs = snap.docs.slice().sort((a, b) => (a.data().name || "").localeCompare(b.data().name || ""));
+        docs.forEach(doc => {
             const c = doc.data();
-            let actions = "";
-            if (isAdmin()) {
-                actions = `<button class="btn btn-sm btn-soft delCustBtn" data-id="${doc.id}" title="Delete customer"><i class="fas fa-trash-can text-danger"></i></button>`;
-            }
+            const bal = Math.round((parseFloat(c.balance) || 0) * 100) / 100;
+            window.customersCache[doc.id] = { id: doc.id, name: c.name, phone: c.phone, balance: bal };
+            if (bal > 0) { totalOwed += bal; debtors++; }
+
+            const actions = `
+                ${bal > 0 ? `<button class="btn btn-sm btn-custom" onclick="window.openCreditPayment('${doc.id}')" title="Record a payment"><i class="fas fa-hand-holding-dollar me-1"></i>Payment</button>` : ""}
+                <button class="btn btn-sm btn-soft" onclick="window.openCreditStatement('${doc.id}')" title="Statement"><i class="fas fa-file-lines"></i></button>
+                ${admin ? `<button class="btn btn-sm btn-soft delCustBtn" data-id="${doc.id}" title="Delete customer"><i class="fas fa-trash-can text-danger"></i></button>` : ""}`;
+
             rowsHTML += `<tr>
-                <td data-label="Name" class="fw-semibold">${c.name}</td><td data-label="Phone">${c.phone || ''}</td><td class="text-end">${actions}</td>
+                <td data-label="Name" class="fw-semibold">${c.name}</td>
+                <td data-label="Phone">${c.phone || ''}</td>
+                <td data-label="Balance" class="text-end fw-bold ${bal > 0 ? 'text-danger' : 'text-muted'}">${bal > 0 ? "KSh " + bal.toLocaleString(undefined, { minimumFractionDigits: 2 }) : "-"}</td>
+                <td class="text-end text-nowrap">${actions}</td>
             </tr>`;
 
             const option = document.createElement("option");
@@ -2237,13 +2408,26 @@ if (customersTable && posCustomer) {
             option.textContent = c.name;
             posCustomer.appendChild(option);
         });
+        if (keepSelected && window.customersCache[keepSelected]) posCustomer.value = keepSelected;
 
-        customersTable.innerHTML = rowsHTML || `<tr><td colspan="3"><div class="empty-state"><i class="fas fa-users"></i>No customers registered yet.</div></td></tr>`;
+        customersTable.innerHTML = rowsHTML || `<tr><td colspan="4"><div class="empty-state"><i class="fas fa-users"></i>No customers registered yet.</div></td></tr>`;
 
-        if (isAdmin()) {
+        const summary = document.getElementById("creditSummary");
+        if (summary) {
+            summary.innerHTML = totalOwed > 0
+                ? `<i class="fas fa-book me-2"></i><b>KSh ${totalOwed.toLocaleString(undefined, { minimumFractionDigits: 2 })}</b> owed by ${debtors} customer${debtors === 1 ? "" : "s"}`
+                : `<i class="fas fa-circle-check me-2"></i>No customer owes money`;
+            summary.classList.toggle("owing", totalOwed > 0);
+        }
+
+        if (admin) {
             document.querySelectorAll(".delCustBtn").forEach(btn => {
                 btn.onclick = async () => {
                     const id = btn.dataset.id;
+                    const cust = window.customersCache[id];
+                    if (cust && cust.balance > 0) {
+                        return Swal.fire("Customer owes money", `${cust.name} still owes KSh ${cust.balance.toLocaleString()}. Record their payment before deleting them.`, "warning");
+                    }
                     const result = await Swal.fire({
                         title: "Delete Customer?",
                         text: "Are you sure you want to delete this customer record?",
@@ -2265,6 +2449,164 @@ if (customersTable && posCustomer) {
     });
 }
 
+/* ---- Customer tabs (credit): payments and statements ---- */
+window.db.collection("credit_payments").orderBy("at", "desc").limit(300).onSnapshot(snap => {
+    window.creditPayments = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const modalEl = document.getElementById("closeDayModal");
+    if (modalEl && modalEl.classList.contains("show") && typeof window.updateCloseDaySummary === "function") window.updateCloseDaySummary();
+}, err => console.warn("Credit payments listener:", err));
+
+const creditMoney = (n) => "KSh " + (parseFloat(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+window.openCreditPayment = (id) => {
+    const c = window.customersCache[id];
+    if (!c) return;
+    window.creditPayCustomerId = id;
+    document.getElementById("cpName").textContent = c.name;
+    document.getElementById("cpBalance").textContent = creditMoney(c.balance);
+    document.getElementById("cpAmount").value = "";
+    document.getElementById("cpMethod").value = "Cash";
+    document.getElementById("cpCode").value = "";
+    document.getElementById("cpNote").value = "";
+    bootstrap.Modal.getOrCreateInstance(document.getElementById("creditPaymentModal")).show();
+};
+
+window.fillCreditPaymentFull = () => {
+    const c = window.customersCache[window.creditPayCustomerId];
+    if (c) document.getElementById("cpAmount").value = c.balance;
+};
+
+window.saveCreditPayment = async () => {
+    const id = window.creditPayCustomerId;
+    const c = window.customersCache[id];
+    if (!c) return;
+
+    const amount = Math.round((parseFloat(document.getElementById("cpAmount").value) || 0) * 100) / 100;
+    if (amount <= 0) return Swal.fire("Enter an amount", "Type how much the customer paid.", "warning");
+    if (amount > c.balance + 0.005) {
+        return Swal.fire("Too much", `${c.name} only owes ${creditMoney(c.balance)}.`, "warning");
+    }
+
+    const method = document.getElementById("cpMethod").value;
+    const note = document.getElementById("cpNote").value.trim();
+    const code = document.getElementById("cpCode").value.trim();
+
+    try {
+        const batch = window.db.batch();
+        batch.set(window.db.collection("credit_payments").doc(), {
+            customerId: id,
+            customerName: c.name,
+            amount,
+            method,
+            code,
+            note,
+            receivedBy: getCurrentUserEmail() || "unknown",
+            dateKey: new Date().toLocaleDateString("en-CA"),
+            at: new Date()
+        });
+        batch.update(window.db.collection("customers").doc(id), { balance: firebase.firestore.FieldValue.increment(-amount) });
+        const confirmed = await writeWithGrace(batch.commit());
+
+        hideModalById("creditPaymentModal");
+        const remaining = Math.max(0, c.balance - amount);
+        Swal.fire({
+            icon: "success",
+            title: confirmed ? "Payment recorded" : "Saved on this device",
+            text: `${creditMoney(amount)} received from ${c.name}. ${remaining > 0 ? "Remaining balance: " + creditMoney(remaining) : "Their tab is fully paid."}`
+        });
+
+        try {
+            window.sendAlert(
+                `💰 *Credit payment* - ${creditMoney(amount)}\n` +
+                `Customer: ${c.name}\nMethod: ${method}${code ? " (" + code + ")" : ""}\n` +
+                `Balance now: ${creditMoney(remaining)}\nReceived by: ${getCurrentUserEmail() || "unknown"}`,
+                "onSale"
+            );
+        } catch (alertErr) { console.warn("Payment alert failed:", alertErr); }
+    } catch (err) {
+        Swal.fire("Could not save payment", err.message, "error");
+    }
+};
+
+window.openCreditStatement = (id) => {
+    const c = window.customersCache[id];
+    if (!c) return;
+
+    const sales = (window.allSales || [])
+        .filter(s => s.payment === "Credit" && s.customerId === id)
+        .map(s => ({
+            date: s.date.toDate(),
+            desc: (s.items || []).map(i => `${window.toMixedFraction(i.qty)} x ${i.name}`).join(", "),
+            debit: parseFloat(s.total) || 0,
+            credit: 0
+        }));
+    const pays = (window.creditPayments || [])
+        .filter(p => p.customerId === id)
+        .map(p => ({
+            date: p.at && p.at.toDate ? p.at.toDate() : new Date(p.at),
+            desc: `Payment received (${p.method})${p.note ? " - " + p.note : ""}`,
+            debit: 0,
+            credit: parseFloat(p.amount) || 0
+        }));
+    const entries = sales.concat(pays).sort((a, b) => b.date - a.date);
+
+    const totalDebit = entries.reduce((n, e) => n + e.debit, 0);
+    const totalCredit = entries.reduce((n, e) => n + e.credit, 0);
+    window.currentStatement = { customer: c, entries, totalDebit, totalCredit };
+
+    document.getElementById("csName").textContent = c.name + (c.phone ? " · " + c.phone : "");
+    document.getElementById("csBalance").textContent = creditMoney(c.balance);
+    document.getElementById("csBalance").className = "fw-bold fs-5 " + (c.balance > 0 ? "text-danger" : "text-success");
+    document.getElementById("csBody").innerHTML = entries.length
+        ? entries.map(e => `
+            <tr>
+                <td class="text-nowrap">${e.date.toLocaleDateString("en-GB")}<small class="text-muted d-block">${e.date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</small></td>
+                <td>${e.desc}</td>
+                <td class="text-end">${e.debit ? creditMoney(e.debit) : ""}</td>
+                <td class="text-end text-success">${e.credit ? creditMoney(e.credit) : ""}</td>
+            </tr>`).join("")
+        : `<tr><td colspan="4"><div class="empty-state"><i class="fas fa-file-lines"></i>No credit activity yet.</div></td></tr>`;
+    document.getElementById("csTotals").innerHTML = entries.length
+        ? `<tr><th colspan="2">Totals</th><th class="text-end">${creditMoney(totalDebit)}</th><th class="text-end">${creditMoney(totalCredit)}</th></tr>`
+        : "";
+
+    bootstrap.Modal.getOrCreateInstance(document.getElementById("creditStatementModal")).show();
+};
+
+window.downloadCreditStatement = () => {
+    const st = window.currentStatement;
+    if (!st) return;
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+
+    doc.setFontSize(20);
+    doc.setTextColor(41, 128, 185);
+    doc.text("MADOLLAR LIQUOR PUB", 105, 15, null, null, "center");
+    doc.setFontSize(14);
+    doc.setTextColor(0);
+    doc.text("Customer Statement", 105, 24, null, null, "center");
+    doc.setFontSize(11);
+    doc.text(`Customer: ${st.customer.name}${st.customer.phone ? " (" + st.customer.phone + ")" : ""}`, 14, 36);
+    doc.text(`Date: ${new Date().toLocaleDateString("en-GB")}`, 14, 43);
+    doc.text(`Balance owed: ${creditMoney(st.customer.balance)}`, 14, 50);
+
+    doc.autoTable({
+        startY: 58,
+        head: [["Date", "Details", "On credit (KSh)", "Paid (KSh)"]],
+        body: st.entries.map(e => [
+            e.date.toLocaleDateString("en-GB") + " " + e.date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            e.desc,
+            e.debit ? e.debit.toLocaleString() : "",
+            e.credit ? e.credit.toLocaleString() : ""
+        ]),
+        foot: [["", "Totals", st.totalDebit.toLocaleString(), st.totalCredit.toLocaleString()]],
+        theme: "striped",
+        headStyles: { fillColor: [41, 128, 185] },
+        styles: { fontSize: 9, cellPadding: 3 }
+    });
+    doc.save(`Statement_${st.customer.name.replace(/\s+/g, "_")}.pdf`);
+};
+
 function renderCart() {
     if (!cartList) return;
     cartList.innerHTML = "";
@@ -2284,7 +2626,7 @@ function renderCart() {
                 <div class="cart-line-meta">${window.toMixedFraction(c.qty)} × KSh ${Number(c.price).toLocaleString()}</div>
             </div>
             <div class="cart-line-total">KSh ${(c.price * c.qty).toFixed(2)}</div>`;
-        li.querySelector(".cart-line-name").textContent = c.name;
+        li.querySelector(".cart-line-name").textContent = itemLabel(c);
         const rmBtn = document.createElement("button");
         rmBtn.className = "btn btn-soft btn-sm btn-icon";
         rmBtn.title = "Remove item";
@@ -2309,7 +2651,7 @@ if (productSearch && productResults) {
             return `
                 <a class="dropdown-item ${isOutOfStock ? 'text-muted' : ''}" href="#" 
                    onclick="event.preventDefault(); ${isOutOfStock ? "Swal.fire('Out of Stock', 'This item is out of stock.', 'warning')" : `window.selectProd('${m.id}', '${p.name.replace(/'/g, "\\'")}', ${p.price})`}">
-                    ${p.name} - <strong>KSh ${p.price}</strong> ${isOutOfStock ? '<span class="low-stock ms-1">Out of Stock</span>' : ""}
+                    ${p.name} - <strong>KSh ${p.price}</strong> ${parseFloat(p.totsPerBottle) > 0 ? '<span class="tot-tag">tots</span>' : ""} ${isOutOfStock ? '<span class="low-stock ms-1">Out of Stock</span>' : ""}
                 </a>
             `;
         }).join('');
@@ -2317,10 +2659,24 @@ if (productSearch && productResults) {
     };
 }
 
+/**
+ * Shows the Bottle / Tot choice only for products that are set up to be sold by the tot
+ */
+function updatePosUnitOptions() {
+    const unitEl = document.getElementById("posUnit");
+    if (!unitEl) return;
+    const doc = selectedProduct && window.productsCache.find(d => d.id === selectedProduct.id);
+    const p = doc && doc.data();
+    const hasTots = !!(p && parseFloat(p.totsPerBottle) > 0 && parseFloat(p.totPrice) > 0);
+    unitEl.classList.toggle("d-none", !hasTots);
+    unitEl.value = "bottle";
+}
+
 window.selectProd = (id, name, price) => {
     if (productSearch) productSearch.value = name;
     selectedProduct = { id, name, price };
     if (productResults) productResults.style.display = "none";
+    updatePosUnitOptions();
 };
 
 if (addToCartBtn) {
@@ -2349,11 +2705,33 @@ if (addToCartBtn) {
         const currentStock = parseFloat(prodData.stock) || 0;
         const requestedQty = parseQty(posQty.value);
 
-        if (isNaN(requestedQty) || requestedQty <= 0) return Swal.fire("Invalid Quantity", "Enter a quantity such as 1 or 1/2.", "warning");
-        if (currentStock <= 0) return Swal.fire("Out of Stock", `Sorry, ${prodData.name} is out of stock.`, "warning");
-        if (requestedQty > currentStock) return Swal.fire("Insufficient Stock", `Only ${window.toMixedFraction(currentStock)} available.`, "warning");
+        const unitEl = document.getElementById("posUnit");
+        const sellingTots = !!(unitEl && !unitEl.classList.contains("d-none") && unitEl.value === "tot");
+        const totsPerBottle = parseFloat(prodData.totsPerBottle) || 0;
+        // How much of a bottle this sale uses up (a tot is 1 / totsPerBottle of a bottle)
+        const stockNeeded = sellingTots && totsPerBottle > 0 ? Math.round((requestedQty / totsPerBottle) * 1e6) / 1e6 : requestedQty;
 
-        cart.push({
+        // Stock already reserved by earlier lines of this same cart
+        const inCart = cart.filter(c => c.id === prodId).reduce((n, c) => n + itemStockQty(c), 0);
+
+        if (isNaN(requestedQty) || requestedQty <= 0) return Swal.fire("Invalid Quantity", sellingTots ? "Enter how many tots, for example 2." : "Enter a quantity such as 1 or 1/2.", "warning");
+        if (currentStock <= 0) return Swal.fire("Out of Stock", `Sorry, ${prodData.name} is out of stock.`, "warning");
+        if (stockNeeded + inCart > currentStock + 1e-9) {
+            const left = currentStock - inCart;
+            return Swal.fire("Insufficient Stock", sellingTots
+                ? `Only about ${Math.max(0, Math.floor(left * totsPerBottle + 1e-6))} tots available.`
+                : `Only ${window.toMixedFraction(Math.max(0, left))} available.`, "warning");
+        }
+
+        cart.push(sellingTots ? {
+            id: prodId,
+            name: prodData.name,
+            price: parseFloat(prodData.totPrice),
+            qty: requestedQty,
+            unit: "tot",
+            stockQty: stockNeeded,
+            totsPerBottle
+        } : {
             id: prodId,
             name: prodData.name,
             price: parseFloat(prodData.price),
@@ -2367,6 +2745,7 @@ if (addToCartBtn) {
         renderCart();
 
         selectedProduct = null;
+        updatePosUnitOptions();
         if (productSearch) productSearch.value = "";
         if (posQty) posQty.value = "1";
         if (productSearch) productSearch.focus();
@@ -2422,13 +2801,24 @@ if (checkoutBtn) {
             modalCartSummary.innerHTML = cart.map(i => `
                 <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
                     <div>
-                        <strong>${i.name}</strong>
+                        <strong>${itemLabel(i)}</strong>
                         <span class="badge text-bg-light border ms-1">× ${window.toMixedFraction(i.qty)}</span>
                     </div>
                     <span class="fw-bold">KSh ${(i.price * i.qty).toFixed(2)}</span>
                 </div>
             `).join('');
         }
+
+        const methodEl = document.getElementById("paymentMethod");
+        if (methodEl) methodEl.value = "Cash";
+        const creditOpt = methodEl && methodEl.querySelector('option[value="Credit"]');
+        if (creditOpt) {
+            const registered = !!(posCustEl && posCustEl.value && window.customersCache[posCustEl.value]);
+            creditOpt.disabled = !registered;
+            creditOpt.textContent = registered ? "Credit (customer tab)" : "Credit (register the customer first)";
+        }
+        const creditHintEl = document.getElementById("creditHint");
+        if (creditHintEl) creditHintEl.classList.add("d-none");
 
         const paymentModalEl = document.getElementById("paymentModal");
         if (paymentModalEl) {
@@ -2448,6 +2838,13 @@ if (paymentCompleteBtn) {
         if (cart.length === 0) return Swal.fire("Warning", "Cart is empty", "error");
         if (paymentCompleteBtn.disabled) return;
 
+        // A sale on credit must be linked to a registered customer, so their balance can be tracked
+        const isCreditSale = document.getElementById("paymentMethod").value === "Credit";
+        const creditCustomerId = document.getElementById("posCustomer").value;
+        if (isCreditSale && (!creditCustomerId || !window.customersCache[creditCustomerId])) {
+            return Swal.fire("Choose a customer", "A sale on credit needs a registered customer. Close this window, pick the customer (or add them with +), then try again.", "warning");
+        }
+
         paymentCompleteBtn.disabled = true;
         const originalText = paymentCompleteBtn.innerHTML;
         paymentCompleteBtn.innerHTML = `<i class="fas fa-spinner fa-spin me-1"></i> Processing...`;
@@ -2459,6 +2856,7 @@ if (paymentCompleteBtn) {
 
         const paymentMethodEl = document.getElementById("paymentMethod");
         const transCodeEl = document.getElementById("transCode");
+        const saleCustomerId = posCustEl && posCustEl.value ? posCustEl.value : null;
 
         // Close payment modal during processing attempt
         const paymentModalEl = document.getElementById("paymentModal");
@@ -2478,32 +2876,39 @@ if (paymentCompleteBtn) {
             // 1. Fetch current product data & validate stock levels
             for (const c of cart) {
                 const prodRef = window.db.collection("products").doc(c.id);
-                const snap = await prodRef.get();
+                const snap = await prodRef.get(readOpts());
 
                 if (!snap.exists) throw new Error(`Product "${c.name}" not found in inventory.`);
                 const pData = snap.data();
 
                 const currentStock = parseFloat(pData.stock) || 0;
-                const requestedQty = parseFloat(c.qty) || 0;
+                const requestedQty = parseFloat(c.qty) || 0;               // how many were sold (bottles or tots)
+                const stockNeeded = itemStockQty(c);                       // how much of the bottle stock that uses
+                const isTot = c.unit === "tot";
 
-                if (currentStock < requestedQty) {
-                    throw new Error(`Insufficient stock for "${c.name}". Available: ${currentStock}, Requested: ${requestedQty}`);
+                if (currentStock < stockNeeded - 1e-9) {
+                    throw new Error(`Insufficient stock for "${c.name}". Available: ${window.toMixedFraction(currentStock)}, Requested: ${window.toMixedFraction(stockNeeded)}`);
                 }
 
                 const sellPrice = parseFloat(c.price) || 0;
                 totalAmount += (sellPrice * requestedQty);
 
-                processedItems.push({
+                // Cost per unit sold: for a tot, the bottle's buy price shared across its tots
+                const bottleCost = parseFloat(pData.buyPrice) || 0;
+                const totsInBottle = parseFloat(pData.totsPerBottle) || parseFloat(c.totsPerBottle) || 0;
+                const unitCost = isTot && totsInBottle > 0 ? bottleCost / totsInBottle : bottleCost;
+
+                processedItems.push(Object.assign({
                     id: c.id,
                     name: c.name,
                     price: sellPrice,
                     qty: requestedQty,
-                    cost: parseFloat(pData.buyPrice) || 0
-                });
+                    cost: unitCost
+                }, isTot ? { unit: "tot", stockQty: stockNeeded } : {}));
 
                 // Batch stock reduction
-                const newStock = Math.max(currentStock - requestedQty, 0);
-                batch.update(prodRef, { stock: newStock });
+                const newStock = Math.max(currentStock - stockNeeded, 0);
+                batch.update(prodRef, { stock: firebase.firestore.FieldValue.increment(-stockNeeded) });
 
                 // Only flag items that just crossed their minimum level, so a repeat sale doesn't re-alert
                 const minLevel = parseFloat(pData.min) || 0;
@@ -2514,18 +2919,28 @@ if (paymentCompleteBtn) {
 
             // 2. Add Sale transaction record to batch
             const saleRef = window.db.collection("sales").doc();
+            const paymentValue = paymentMethodEl ? paymentMethodEl.value : "Cash";
             batch.set(saleRef, {
                 customer: customerName,
+                customerId: saleCustomerId,
                 items: processedItems,
                 total: totalAmount,
-                payment: paymentMethodEl ? paymentMethodEl.value : "Cash",
+                payment: paymentValue,
                 transaction: transCodeEl ? transCodeEl.value : "",
                 date: new Date()
             });
 
-            // 3. Execute atomic batch write (all or nothing)
-            await batch.commit();
-            return { items: processedItems, total: totalAmount, lowStock };
+            // A sale on credit adds to the customer's balance in the same all-or-nothing write
+            if (paymentValue === "Credit" && saleCustomerId) {
+                batch.update(window.db.collection("customers").doc(saleCustomerId), {
+                    balance: firebase.firestore.FieldValue.increment(totalAmount)
+                });
+            }
+
+            // 3. Execute atomic batch write (all or nothing). Offline, it is saved on the device and syncs later,
+            //    so we stop waiting after a few seconds instead of reporting a false failure.
+            const confirmed = await writeWithGrace(batch.commit());
+            return { items: processedItems, total: totalAmount, lowStock, queued: !confirmed };
         };
 
         // 10-Second Timeout Race Controller
@@ -2536,15 +2951,17 @@ if (paymentCompleteBtn) {
         try {
             const saleResult = await Promise.race([processCheckout(), timeoutPromise]);
 
-            try {
-                window.notifySale({
-                    customer: customerName,
-                    payment: paymentMethodEl ? paymentMethodEl.value : "Cash",
-                    transaction: transCodeEl ? transCodeEl.value : "",
-                    ...saleResult
-                });
-            } catch (alertErr) {
-                console.warn("Sale alert failed:", alertErr);
+            if (!(saleResult.queued && !navigator.onLine)) {
+                try {
+                    window.notifySale({
+                        customer: customerName,
+                        payment: paymentMethodEl ? paymentMethodEl.value : "Cash",
+                        transaction: transCodeEl ? transCodeEl.value : "",
+                        ...saleResult
+                    });
+                } catch (alertErr) {
+                    console.warn("Sale alert failed:", alertErr);
+                }
             }
 
             // Clear cart & reset inputs
@@ -2555,12 +2972,24 @@ if (paymentCompleteBtn) {
 
             if (typeof Swal !== 'undefined' && Swal.isVisible && Swal.isVisible()) Swal.close();
 
-            Swal.fire({
-                title: "Payment Completed!",
-                text: "Sale recorded successfully and inventory stock updated.",
-                icon: "success",
-                confirmButtonColor: "#198754"
-            });
+            const soldOnCredit = paymentMethodEl && paymentMethodEl.value === "Credit";
+            if (saleResult.queued) {
+                Swal.fire({
+                    title: "Saved on this device",
+                    html: "The sale is saved and will be sent automatically when the internet is back.<br><b>Do not enter it again.</b>",
+                    icon: "info",
+                    confirmButtonColor: "#a86d27"
+                });
+            } else {
+                Swal.fire({
+                    title: soldOnCredit ? "Added to customer's tab" : "Payment Completed!",
+                    text: soldOnCredit
+                        ? `${creditMoney(saleResult.total)} added to ${customerName}'s tab and stock updated.`
+                        : "Sale recorded successfully and inventory stock updated.",
+                    icon: "success",
+                    confirmButtonColor: "#198754"
+                });
+            }
 
         } catch (e) {
             console.error("Checkout processing error:", e);
@@ -2761,7 +3190,7 @@ window.filterSalesTable = () => {
             return `
                 <li class="${isMatch ? 'match' : ''}">
                     <span class="sale-qty">${window.toMixedFraction(qtyVal)}</span>
-                    <span class="name">${i.name}<small class="text-muted d-block">@ KSh ${(parseFloat(i.price) || 0).toLocaleString()}</small></span>
+                    <span class="name">${itemLabel(i)}<small class="text-muted d-block">@ KSh ${(parseFloat(i.price) || 0).toLocaleString()}</small></span>
                     <strong>KSh ${money(subtotal)}</strong>
                     ${admin ? `<button class="btn btn-link p-0 border-0" title="Remove this item" onclick="window.deleteItemFromSale('${s.id}', ${idx})"><i class="fas fa-circle-xmark text-danger"></i></button>` : ''}
                 </li>`;
@@ -2772,8 +3201,8 @@ window.filterSalesTable = () => {
                 <summary>
                     <span class="sr-time">${timeStr}</span>
                     <span class="sr-cust"><i class="fas fa-user"></i>${s.customer || 'Guest'}</span>
-                    <span class="sr-items">${lead.name} <b>× ${window.toMixedFraction(lead.qty)}</b>${more > 0 ? ` <span class="sr-more">+${more} more</span>` : ''}</span>
-                    <span class="sr-pay">${s.payment ? `<span class="sale-chip">${s.payment}</span>` : ''}</span>
+                    <span class="sr-items">${itemLabel(lead)} <b>× ${window.toMixedFraction(lead.qty)}</b>${more > 0 ? ` <span class="sr-more">+${more} more</span>` : ''}</span>
+                    <span class="sr-pay">${s._pending ? '<span class="sale-chip pending" title="Saved on this device, waiting to sync">Not synced</span> ' : ''}${s.payment ? `<span class="sale-chip ${s.payment === 'Credit' ? 'credit' : ''}">${s.payment}</span>` : ''}</span>
                     <span class="sr-total">KSh ${money(s.total)}</span>
                     <span class="sr-chev"><i class="fas fa-chevron-down"></i></span>
                 </summary>
@@ -2862,7 +3291,7 @@ window.setSalesRange = (range) => {
 };
 
 // Sales Snapshot Listener
-window.db.collection("sales").orderBy("date", "desc").onSnapshot(snap => {
+window.db.collection("sales").orderBy("date", "desc").onSnapshot({ includeMetadataChanges: true }, snap => {
     let allSales = [];
     let todayTotal = 0;
     let yesterdayTotal = 0;
@@ -2892,7 +3321,7 @@ window.db.collection("sales").orderBy("date", "desc").onSnapshot(snap => {
 
     snap.docs.forEach(doc => {
         const s = doc.data();
-        allSales.push({ id: doc.id, ...s });
+        allSales.push({ id: doc.id, _pending: doc.metadata.hasPendingWrites, ...s });
         const saleDate = s.date.toDate();
         let saleCost = 0;
 
@@ -3089,10 +3518,11 @@ window.deleteMonthProfit = async (monthKey) => {
         salesToDelete.forEach(s => {
             const docRef = window.db.collection("sales").doc(s.id);
             batch.delete(docRef);
+            reverseCreditForSale(batch, s, parseFloat(s.total) || 0);
 
             if (shouldRestock && Array.isArray(s.items)) {
                 s.items.forEach(item => {
-                    const qty = parseFloat(item.qty) || 0;
+                    const qty = itemStockQty(item);
                     if (qty <= 0) return;
 
                     let prodDoc = null;
@@ -3215,7 +3645,7 @@ if (downloadFilteredBtn) {
             body: filtered.map(s => [
                 s.date.toDate().toLocaleDateString('en-GB') + ' ' + s.date.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                 s.customer,
-                s.items.map(i => `${i.name} (${window.toMixedFraction(i.qty)} x KSh ${i.price})`).join("\n"),
+                s.items.map(i => `${itemLabel(i)} (${window.toMixedFraction(i.qty)} x KSh ${i.price})`).join("\n"),
                 s.total.toLocaleString()
             ]),
             theme: 'striped',
@@ -3274,12 +3704,13 @@ function renderGroupedSales(sales, searchFilter = "") {
             s.items.forEach(item => {
                 const itemMatches = !query || item.name.toLowerCase().includes(query);
                 if (itemMatches) {
-                    if (!productSummary[item.name]) productSummary[item.name] = { qty: 0, total: 0 };
+                    const label = itemLabel(item);
+                    if (!productSummary[label]) productSummary[label] = { qty: 0, total: 0 };
                     const qtyVal = parseFloat(item.qty) || 0;
                     const priceVal = parseFloat(item.price) || 0;
                     const subtotal = priceVal * qtyVal;
-                    productSummary[item.name].qty += qtyVal;
-                    productSummary[item.name].total += subtotal;
+                    productSummary[label].qty += qtyVal;
+                    productSummary[label].total += subtotal;
                     dayTotal += subtotal;
                 }
             });
@@ -3371,6 +3802,7 @@ window.deleteItemFromSale = async (saleId, itemIndex) => {
         const batch = window.db.batch();
         const saleRef = window.db.collection("sales").doc(saleId);
         const updatedItems = sale.items.filter((_, idx) => idx !== itemIndex);
+        reverseCreditForSale(batch, sale, (parseFloat(itemToDelete.price) || 0) * (parseFloat(itemToDelete.qty) || 0));
 
         if (updatedItems.length === 0) {
             batch.delete(saleRef);
@@ -3383,7 +3815,7 @@ window.deleteItemFromSale = async (saleId, itemIndex) => {
         }
 
         const restockedItems = [];
-        const qty = parseFloat(itemToDelete.qty) || 0;
+        const qty = itemStockQty(itemToDelete);
 
         if (shouldRestock && qty > 0) {
             let prodDoc = null;
@@ -3441,12 +3873,13 @@ window.deleteSale = async (id) => {
         const batch = window.db.batch();
         const saleRef = window.db.collection("sales").doc(id);
         batch.delete(saleRef);
+        reverseCreditForSale(batch, sale, parseFloat(sale.total) || 0);
 
         const restockedItems = [];
 
         if (shouldRestock && sale && Array.isArray(sale.items)) {
             for (const item of sale.items) {
-                const qty = parseFloat(item.qty) || 0;
+                const qty = itemStockQty(item);
                 if (qty <= 0) continue;
 
                 let prodDoc = null;
@@ -3487,6 +3920,17 @@ window.deleteSale = async (id) => {
 };
 
 // Delete Entire Day Sales Records
+/**
+ * When a credit sale (or part of it) is deleted, the customer no longer owes that amount
+ */
+function reverseCreditForSale(batch, sale, amount) {
+    if (sale && sale.payment === "Credit" && sale.customerId && amount && window.customersCache[sale.customerId]) {
+        batch.update(window.db.collection("customers").doc(sale.customerId), {
+            balance: firebase.firestore.FieldValue.increment(-amount)
+        });
+    }
+}
+
 window.deleteDay = async (dateStr) => {
     if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
 
@@ -3511,10 +3955,11 @@ window.deleteDay = async (dateStr) => {
         salesToDelete.forEach(s => {
             const docRef = window.db.collection("sales").doc(s.id);
             batch.delete(docRef);
+            reverseCreditForSale(batch, s, parseFloat(s.total) || 0);
 
             if (shouldRestock && Array.isArray(s.items)) {
                 s.items.forEach(item => {
-                    const qty = parseFloat(item.qty) || 0;
+                    const qty = itemStockQty(item);
                     if (qty <= 0) return;
 
                     let prodDoc = null;
@@ -3579,11 +4024,12 @@ window.downloadDailyReport = (dateStr) => {
     dailySales.forEach(s => {
         grandTotal += s.total;
         s.items.forEach(item => {
-            if (!productSummary[item.name]) {
-                productSummary[item.name] = { qty: 0, total: 0 };
+            const label = itemLabel(item);
+            if (!productSummary[label]) {
+                productSummary[label] = { qty: 0, total: 0 };
             }
-            productSummary[item.name].qty += parseFloat(item.qty) || 0;
-            productSummary[item.name].total += (item.price * item.qty);
+            productSummary[label].qty += parseFloat(item.qty) || 0;
+            productSummary[label].total += (item.price * item.qty);
         });
     });
 
@@ -3693,7 +4139,7 @@ window.downloadSale = async (id) => {
         startY: 62,
         head: [['Item', 'Qty', 'Unit Price', 'Subtotal']],
         body: s.items.map(i => [
-            i.name,
+            itemLabel(i),
             window.toMixedFraction(i.qty),
             `KSh ${Number(i.price).toLocaleString()}`,
             `KSh ${(i.price * i.qty).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -3794,7 +4240,7 @@ if (downloadAllBtn) {
                 s.customer,
                 s.items.map(i => {
                     const sub = i.qty * i.price;
-                    return `${i.name} (${window.toMixedFraction(i.qty)} x KSh ${i.price.toLocaleString()} = KSh ${sub.toLocaleString()})`;
+                    return `${itemLabel(i)} (${window.toMixedFraction(i.qty)} x KSh ${i.price.toLocaleString()} = KSh ${sub.toLocaleString()})`;
                 }).join("\n"),
                 s.total.toLocaleString()
             ]),
@@ -4087,7 +4533,7 @@ window.db.collection("users").onSnapshot(snap => {
             <tr>
                 <td data-label="Employee" class="fw-semibold">${staffName}</td>
                 <td data-label="Email" class="text-muted">${staffEmail}</td>
-                <td data-label="Role"><span class="badge rounded-pill ${staffRole === 'admin' ? 'text-bg-warning' : 'text-bg-primary'}">${staffRole.toUpperCase()}</span></td>
+                <td data-label="Role"><span class="badge rounded-pill ${staffRole === 'admin' ? 'text-bg-warning' : (staffRole === 'manager' ? 'text-bg-info' : 'text-bg-primary')}">${staffRole.toUpperCase()}</span></td>
                 <td data-label="Status">
                     <span class="badge rounded-pill ${isBlocked ? 'text-bg-dark' : 'text-bg-success'}">
                         ${isBlocked ? 'BLOCKED' : 'ACTIVE'}
@@ -4252,11 +4698,14 @@ window.renderInsights = () => {
     Chart.defaults.font.family = "Inter, system-ui, sans-serif";
 
     // ---- bucket sales per day
+    const hourRev = new Array(24).fill(0), hourOrders = new Array(24).fill(0);
+    const dowRev = new Array(7).fill(0), dowOrders = new Array(7).fill(0), dowCount = new Array(7).fill(0);
     const labels = [], revenue = [], profit = [], dayIndex = {};
     for (let i = 0; i < days; i++) {
         const d = new Date(start);
         d.setDate(start.getDate() + i);
         dayIndex[d.toLocaleDateString("en-CA")] = i;
+        dowCount[d.getDay()]++;
         labels.push(d.toLocaleDateString("en-GB", { day: "numeric", month: "short" }));
         revenue.push(0);
         profit.push(0);
@@ -4272,6 +4721,8 @@ window.renderInsights = () => {
         if (i === undefined) return;
 
         const total = parseFloat(s.total) || 0;
+        hourRev[d.getHours()] += total; hourOrders[d.getHours()]++;
+        dowRev[d.getDay()] += total; dowOrders[d.getDay()]++;
         const gain = total - saleCostOf(s, costMap);
         revenue[i] += total;
         profit[i] += gain;
@@ -4280,11 +4731,13 @@ window.renderInsights = () => {
         orders++;
 
         (s.items || []).forEach(it => {
-            const q = parseFloat(it.qty) || 0;
-            units += q;
-            const p = products[it.name] || (products[it.name] = { qty: 0, revenue: 0 });
-            p.qty += q;
+            const q = parseFloat(it.qty) || 0;          // as sold (bottles or tots): used for money
+            const bq = itemStockQty(it);                // in bottles: used for units
+            units += bq;
+            const p = products[it.name] || (products[it.name] = { qty: 0, revenue: 0, cost: 0 });
+            p.qty += bq;
             p.revenue += (parseFloat(it.price) || 0) * q;
+            p.cost += ((it.cost !== undefined) ? (parseFloat(it.cost) || 0) : (costMap[(it.name || "").trim().toLowerCase()] || 0)) * q;
         });
     });
 
@@ -4380,7 +4833,12 @@ window.renderInsights = () => {
         }
     });
 
-    if (admin) renderProfitAndLoss(sales, costMap, { muted, grid, brand, green, kFormat });
+    if (admin) {
+        renderProfitAndLoss(sales, costMap, { muted, grid, brand, green, kFormat });
+        renderProductProfit(products, days);
+        window.renderBusyTimes({ hourRev, hourOrders, dowRev, dowOrders, dowCount, colors: { muted, grid, brand, green, ink }, kFormat, days });
+        window.renderSmartWarnings();
+    }
 };
 
 /* ------------------------------------------------------------ Profit & loss */
@@ -4479,6 +4937,7 @@ function paymentBucket(method) {
     if (v.includes("mpesa") || v.includes("m-pesa")) return "mpesa";
     if (v === "card") return "card";
     if (v.includes("bank")) return "bank";
+    if (v === "credit") return "credit";
     return "other";
 }
 
@@ -4490,6 +4949,7 @@ function computeDaySummary(dateValue) {
         mpesa: { label: "M-PESA", amount: 0, count: 0 },
         card: { label: "Card", amount: 0, count: 0 },
         bank: { label: "Bank Transfer", amount: 0, count: 0 },
+        credit: { label: "On credit (not paid yet)", amount: 0, count: 0 },
         other: { label: "Other", amount: 0, count: 0 }
     };
     let total = 0, count = 0;
@@ -4504,10 +4964,20 @@ function computeDaySummary(dateValue) {
         count++;
     });
 
+    // Money received that day from customers paying off their tabs
+    const creditPaid = { cash: 0, other: 0, total: 0, count: 0 };
+    (window.creditPayments || []).forEach(p => {
+        if (p.dateKey !== dateValue) return;
+        const amt = parseFloat(p.amount) || 0;
+        creditPaid.total += amt;
+        creditPaid.count++;
+        if (paymentBucket(p.method) === "cash") creditPaid.cash += amt; else creditPaid.other += amt;
+    });
+
     return {
         dateKey: dateValue,
         label: day.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" }),
-        buckets, total, count
+        buckets, total, count, creditPaid
     };
 }
 
@@ -4518,7 +4988,7 @@ window.openCloseDayModal = () => {
     document.getElementById("closeDayNotes").value = "";
     window.updateCloseDaySummary();
     // Cashiers count blind: only admins see the sales breakdown, expected cash and the difference
-    document.getElementById("closeDayStaffHint").classList.toggle("d-none", isAdmin());
+    document.getElementById("closeDayStaffHint").classList.toggle("d-none", isManagerOrAdmin());
     bootstrap.Modal.getOrCreateInstance(document.getElementById("closeDayModal")).show();
 };
 
@@ -4531,7 +5001,7 @@ window.updateCloseDaySummary = () => {
     const countedRaw = document.getElementById("closeDayCounted").value;
 
     const rows = Object.values(sum.buckets)
-        .filter(b => b.count > 0 || b.label !== "Other")
+        .filter(b => b.count > 0 || ["Cash", "M-PESA", "Card", "Bank Transfer"].includes(b.label))
         .map(b => `
             <div class="cd-row">
                 <span>${b.label}<small>${b.count} sale${b.count === 1 ? "" : "s"}</small></span>
@@ -4541,9 +5011,13 @@ window.updateCloseDaySummary = () => {
         <div class="cd-row cd-total">
             <span>Total sales<small>${sum.count} sale${sum.count === 1 ? "" : "s"}</small></span>
             <strong>${insightMoney(sum.total)}</strong>
-        </div>`;
+        </div>` + (sum.creditPaid.count > 0 ? `
+        <div class="cd-row">
+            <span>Credit repayments received<small>${sum.creditPaid.count} payment${sum.creditPaid.count === 1 ? "" : "s"} · cash ${insightMoney(sum.creditPaid.cash)}</small></span>
+            <strong>${insightMoney(sum.creditPaid.total)}</strong>
+        </div>` : "");
 
-    const expected = openingFloat + sum.buckets.cash.amount;
+    const expected = openingFloat + sum.buckets.cash.amount + sum.creditPaid.cash;
     document.getElementById("closeDayExpected").textContent = insightMoney(expected);
 
     const diffEl = document.getElementById("closeDayDiff");
@@ -4582,13 +5056,13 @@ window.saveDayClosing = async () => {
     const sum = computeDaySummary(dateValue);
     const openingFloat = parseFloat(document.getElementById("closeDayFloat").value) || 0;
     const counted = parseFloat(countedRaw) || 0;
-    const expected = openingFloat + sum.buckets.cash.amount;
+    const expected = openingFloat + sum.buckets.cash.amount + sum.creditPaid.cash;
     const difference = Math.round((counted - expected) * 100) / 100;
     const ref = window.db.collection("day_closings").doc(dateValue);
 
     try {
-        const existing = await ref.get();
-        if (existing.exists) {
+        const existing = await safeGet(ref);
+        if (existing && existing.exists) {
             if (!isAdmin()) {
                 return Swal.fire("Already closed", `This day was already closed by ${existing.data().closedBy || "someone"}. Ask an admin to change it.`, "info");
             }
@@ -4602,7 +5076,7 @@ window.saveDayClosing = async () => {
             if (!ok.isConfirmed) return;
         }
 
-        await ref.set({
+        await writeWithGrace(ref.set({
             dateKey: dateValue,
             dateLabel: sum.label,
             openingFloat,
@@ -4611,6 +5085,9 @@ window.saveDayClosing = async () => {
             cardSales: sum.buckets.card.amount,
             bankSales: sum.buckets.bank.amount,
             otherSales: sum.buckets.other.amount,
+            creditSales: sum.buckets.credit.amount,
+            creditRepaymentsCash: sum.creditPaid.cash,
+            creditRepaymentsTotal: sum.creditPaid.total,
             totalSales: sum.total,
             salesCount: sum.count,
             expectedCash: expected,
@@ -4619,7 +5096,7 @@ window.saveDayClosing = async () => {
             notes: document.getElementById("closeDayNotes").value.trim(),
             closedBy: getCurrentUserEmail() || "unknown",
             closedAt: firebase.firestore.FieldValue.serverTimestamp()
-        });
+        }));
 
         hideModalById("closeDayModal");
         try {
@@ -4633,7 +5110,7 @@ window.saveDayClosing = async () => {
         const msg = difference === 0 ? "Cash balanced perfectly."
             : difference < 0 ? `Cash is short by ${insightMoney(Math.abs(difference))}.`
             : `Cash is over by ${insightMoney(difference)}.`;
-        if (isAdmin()) {
+        if (isManagerOrAdmin()) {
             Swal.fire({
                 icon: difference === 0 ? "success" : "warning",
                 title: "Day closed",
@@ -4714,6 +5191,1096 @@ window.db.collection("day_closings").orderBy("closedAt", "desc").limit(60).onSna
 
 
 /* ==========================================================================
+   SECTION 12D: PROFIT PER PRODUCT, REORDER SUGGESTIONS AND STOCK TAKE
+   ========================================================================== */
+
+/* ------------------------------------------------------- Profit per product */
+window.ppSort = { key: "profit", dir: -1 };
+window.ppFilter = "all";
+window.ppLimit = 30;
+window.ppRows = [];
+
+const PP_VERDICTS = {
+    star: {
+        label: "Star seller", cls: "ok", hint: "Sells well and earns well",
+        meaning: "Sells well and earns well.",
+        action: "Never run out of it. Keep it in front."
+    },
+    volume: {
+        label: "Busy, low profit", cls: "warn", hint: "Sells a lot but earns little per sale",
+        meaning: "Customers buy a lot, but each sale leaves little profit.",
+        action: "Try a small price increase, or find a cheaper supplier."
+    },
+    margin: {
+        label: "High margin, slow", cls: "info", hint: "Earns well but sells slowly",
+        meaning: "Earns well on each sale, but few are sold.",
+        action: "Promote it: display it and suggest it to customers."
+    },
+    low: {
+        label: "Low performer", cls: "bad", hint: "Sells slowly and earns little",
+        meaning: "Sells slowly and earns little.",
+        action: "Order less of it, or stop stocking it."
+    },
+    none: {
+        label: "No sales", cls: "", hint: "Not sold in this period",
+        meaning: "Nothing was sold in this period.",
+        action: "Check if it is stuck on the shelf, then discount it or stop ordering."
+    }
+};
+
+function normName(n) { return String(n || "").trim().toLowerCase(); }
+
+function medianOf(values) {
+    const a = values.slice().sort((x, y) => x - y);
+    if (!a.length) return 0;
+    const m = Math.floor(a.length / 2);
+    return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+}
+
+/**
+ * Builds one row per product (including products with no sales) and a verdict for each
+ */
+function buildProductProfitRows(sold, products) {
+    const byNorm = {};
+    Object.keys(sold).forEach(name => { byNorm[normName(name)] = sold[name]; });
+
+    const rows = [];
+    const used = new Set();
+
+    (products || []).forEach(doc => {
+        const p = doc.data();
+        const key = normName(p.name);
+        used.add(key);
+        const s = byNorm[key];
+        const price = parseFloat(p.price) || 0;
+        const buy = parseFloat(p.buyPrice) || 0;
+        const units = s ? s.qty : 0;
+        const revenue = s ? s.revenue : 0;
+        const cost = s ? s.cost : 0;
+        const profit = revenue - cost;
+        const margin = revenue > 0 ? (profit / revenue) * 100 : (price > 0 ? ((price - buy) / price) * 100 : 0);
+        rows.push({ name: p.name || "", category: (p.category || "").trim(), units, revenue, cost, profit, margin, perUnit: units > 0 ? profit / units : price - buy, stock: parseFloat(p.stock) || 0 });
+    });
+
+    // Products that were sold but have since been deleted still count towards the picture
+    Object.keys(sold).forEach(name => {
+        if (used.has(normName(name))) return;
+        const s = sold[name];
+        const profit = s.revenue - s.cost;
+        rows.push({ name: name + " (removed)", units: s.qty, revenue: s.revenue, cost: s.cost, profit, margin: s.revenue > 0 ? (profit / s.revenue) * 100 : 0, perUnit: s.qty > 0 ? profit / s.qty : 0, stock: 0 });
+    });
+
+    const sellers = rows.filter(r => r.units > 0);
+    const medUnits = medianOf(sellers.map(r => r.units));
+    const medMargin = medianOf(sellers.map(r => r.margin));
+    rows.forEach(r => {
+        if (r.units === 0) r.verdict = "none";
+        else if (r.units >= medUnits) r.verdict = r.margin >= medMargin ? "star" : "volume";
+        else r.verdict = r.margin >= medMargin ? "margin" : "low";
+    });
+    return rows;
+}
+
+function renderProductProfit(sold, days) {
+    window.ppRows = buildProductProfitRows(sold, window.productsCache);
+    window.ppPeriod = days;
+    drawProductProfit();
+    renderCategoryProfit();
+}
+
+function drawProductProfit() {
+    const body = document.getElementById("ppBody");
+    if (!body) return;
+
+    const rows = window.ppRows || [];
+    const search = normName((document.getElementById("ppSearch") || {}).value);
+    const counts = { all: rows.length, star: 0, volume: 0, margin: 0, low: 0, none: 0 };
+    rows.forEach(r => counts[r.verdict]++);
+
+    const chips = document.getElementById("ppChips");
+    if (chips) {
+        const defs = [["all", "All"], ["star", PP_VERDICTS.star.label], ["volume", PP_VERDICTS.volume.label], ["margin", PP_VERDICTS.margin.label], ["low", PP_VERDICTS.low.label], ["none", PP_VERDICTS.none.label]];
+        chips.innerHTML = defs.map(([k, label]) =>
+            `<button class="btn btn-soft btn-sm ${window.ppFilter === k ? "active" : ""}" onclick="window.setProductProfitFilter('${k}')" title="${k === "all" ? "" : PP_VERDICTS[k].hint}">${label} <span class="pp-count">${counts[k]}</span></button>`).join("");
+    }
+
+    let list = rows.filter(r => (window.ppFilter === "all" || r.verdict === window.ppFilter) && (!search || normName(r.name).includes(search)));
+    const { key, dir } = window.ppSort;
+    list.sort((a, b) => key === "name" ? dir * a.name.localeCompare(b.name) : dir * ((a[key] || 0) - (b[key] || 0)));
+
+    const maxProfit = Math.max(1, ...rows.map(r => r.profit));
+    const shown = list.slice(0, window.ppLimit);
+
+    body.innerHTML = shown.length ? shown.map(r => {
+        const v = PP_VERDICTS[r.verdict];
+        const barPct = r.profit > 0 ? Math.max(3, (r.profit / maxProfit) * 100) : 0;
+        return `
+            <tr>
+                <td class="fw-semibold">${r.name}</td>
+                <td class="text-end">${window.toMixedFraction(r.units)}</td>
+                <td class="text-end">${insightMoney(r.revenue)}</td>
+                <td class="text-end text-muted">${insightMoney(r.cost)}</td>
+                <td class="text-end">
+                    <div class="fw-bold ${r.profit >= 0 ? "text-success" : "text-danger"}">${insightMoney(r.profit)}</div>
+                    <div class="pp-bar"><span style="width:${barPct}%"></span></div>
+                </td>
+                <td class="text-end">${r.margin.toFixed(1)}%</td>
+                <td class="text-end text-muted">${r.units > 0 ? insightMoney(r.perUnit) : "-"}</td>
+                <td><span class="pp-tag ${v.cls}" title="${v.hint}">${v.label}</span></td>
+                <td class="pp-advice">
+                    <div class="pp-meaning">${v.meaning}${r.verdict === "none" && r.stock > 0 ? ` <b>${window.toMixedFraction(r.stock)} in stock.</b>` : ""}</div>
+                    <div class="pp-action"><i class="fas fa-lightbulb me-1"></i>${v.action}</div>
+                </td>
+            </tr>`;
+    }).join("") : `<tr><td colspan="9"><div class="empty-state"><i class="fas fa-magnifying-glass-chart"></i>No products match.</div></td></tr>`;
+
+    document.querySelectorAll("#ppTable th[data-sort]").forEach(th => {
+        th.classList.toggle("sorted", th.dataset.sort === key);
+        th.dataset.dir = th.dataset.sort === key ? (dir === 1 ? "asc" : "desc") : "";
+    });
+
+    const more = document.getElementById("ppMore");
+    if (more) {
+        more.innerHTML = `<span class="text-muted small">Showing ${shown.length} of ${list.length} products · last ${window.ppPeriod || 30} days</span>` +
+            (list.length > shown.length ? ` <button class="btn btn-custom btn-sm ms-2" onclick="window.showMoreProductProfit()">Show more</button>` : "");
+    }
+}
+
+window.sortProductProfit = (key) => {
+    window.ppSort = window.ppSort.key === key
+        ? { key, dir: -window.ppSort.dir }
+        : { key, dir: key === "name" ? 1 : -1 };
+    drawProductProfit();
+};
+window.setProductProfitFilter = (f) => { window.ppFilter = f; window.ppLimit = 30; drawProductProfit(); };
+window.showMoreProductProfit = () => { window.ppLimit += 30; drawProductProfit(); };
+
+(function bindProductProfitSearch() {
+    const el = document.getElementById("ppSearch");
+    if (el) el.addEventListener("input", () => { window.ppLimit = 30; drawProductProfit(); });
+})();
+
+
+/* ------------------------------------------------------ Reorder suggestions */
+window.reorderList = [];
+
+/**
+ * For every product: how fast it sells (last 30 days) -> how many to order to cover N days
+ */
+function computeReorderList(coverDays) {
+    const sold = {};
+    const since = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    (window.allSales || []).forEach(s => {
+        if (s.date.toDate().getTime() < since) return;
+        (s.items || []).forEach(i => {
+            const k = normName(i.name);
+            sold[k] = (sold[k] || 0) + itemStockQty(i);
+        });
+    });
+
+    const list = [];
+    (window.productsCache || []).forEach(doc => {
+        const p = doc.data();
+        const stock = parseFloat(p.stock) || 0;
+        const min = parseFloat(p.min) || 0;
+        const buy = parseFloat(p.buyPrice) || 0;
+        const qty30 = sold[normName(p.name)] || 0;
+        const rate = qty30 / 30;
+
+        let need = rate * coverDays + min - stock;
+        if (rate === 0 && stock <= min) need = min * 2 - stock;
+        const qty = Math.ceil(need - 1e-9);
+        if (qty <= 0) return;
+
+        list.push({ id: doc.id, name: p.name || "", stock, min, qty30, rate, daysLeft: rate > 0 ? stock / rate : null, qty, buy, selected: true });
+    });
+
+    list.sort((a, b) => (a.daysLeft === null ? 9999 : a.daysLeft) - (b.daysLeft === null ? 9999 : b.daysLeft));
+    return list;
+}
+
+window.openReorderModal = () => {
+    if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
+    document.getElementById("reorderDays").value = "14";
+    window.renderReorderList();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById("reorderModal")).show();
+};
+
+window.renderReorderList = () => {
+    const cover = parseInt(document.getElementById("reorderDays").value) || 14;
+    window.reorderList = computeReorderList(cover);
+    const body = document.getElementById("reorderBody");
+
+    body.innerHTML = window.reorderList.length ? window.reorderList.map((r, i) => {
+        const urgency = r.daysLeft === null ? "" : (r.daysLeft <= 3 ? "bad" : (r.daysLeft <= 7 ? "warn" : "ok"));
+        return `
+            <tr>
+                <td><input type="checkbox" class="form-check-input" ${r.selected ? "checked" : ""} onchange="window.toggleReorderRow(${i}, this.checked)"></td>
+                <td class="fw-semibold">${r.name}</td>
+                <td class="text-end">${window.toMixedFraction(r.stock)}</td>
+                <td class="text-end">${window.toMixedFraction(r.qty30)}</td>
+                <td class="text-end">${r.daysLeft === null ? '<span class="text-muted">-</span>' : `<span class="pp-tag ${urgency}">${r.daysLeft < 1 ? "<1" : Math.round(r.daysLeft)} d</span>`}</td>
+                <td class="text-end" style="width:110px"><input type="number" min="0" step="1" class="form-control form-control-sm text-end" value="${r.qty}" onchange="window.updateReorderRow(${i}, this.value)"></td>
+                <td class="text-end text-muted" id="reorderCost-${i}">${insightMoney(r.qty * r.buy)}</td>
+            </tr>`;
+    }).join("") : `<tr><td colspan="7"><div class="empty-state"><i class="fas fa-circle-check"></i>Nothing needs ordering right now.</div></td></tr>`;
+
+    updateReorderTotals();
+};
+
+function updateReorderTotals() {
+    const chosen = window.reorderList.filter(r => r.selected && r.qty > 0);
+    document.getElementById("reorderCount").textContent = `${chosen.length} item${chosen.length === 1 ? "" : "s"} selected`;
+    document.getElementById("reorderTotal").textContent = insightMoney(chosen.reduce((n, r) => n + r.qty * r.buy, 0));
+}
+
+window.toggleReorderRow = (i, checked) => { window.reorderList[i].selected = checked; updateReorderTotals(); };
+window.toggleAllReorder = (checked) => {
+    window.reorderList.forEach(r => { r.selected = checked; });
+    window.renderReorderListKeep();
+};
+window.renderReorderListKeep = () => {
+    // redraw checkboxes without recomputing (keeps any quantities the admin edited)
+    const body = document.getElementById("reorderBody");
+    body.querySelectorAll("input[type=checkbox]").forEach((cb, i) => { cb.checked = window.reorderList[i].selected; });
+    updateReorderTotals();
+};
+window.updateReorderRow = (i, value) => {
+    const r = window.reorderList[i];
+    r.qty = Math.max(0, Math.ceil(parseFloat(value) || 0));
+    const cost = document.getElementById(`reorderCost-${i}`);
+    if (cost) cost.textContent = insightMoney(r.qty * r.buy);
+    updateReorderTotals();
+};
+
+window.addReorderToRequisition = () => {
+    const chosen = window.reorderList.filter(r => r.selected && r.qty > 0);
+    if (!chosen.length) return Swal.fire("Nothing selected", "Tick the products you want to order.", "warning");
+
+    chosen.forEach(r => {
+        const existing = window.requisitionItems.find(item => item.id === r.id);
+        if (existing) {
+            existing.qty = r.qty;
+            existing.priceType = "buyPrice";
+            existing.price = r.buy;
+        } else {
+            window.requisitionItems.push({ id: r.id, name: r.name, qty: r.qty, priceType: "buyPrice", price: r.buy });
+        }
+    });
+    window.renderRequisitionTable();
+    hideModalById("reorderModal");
+
+    const tabBtn = document.querySelector('[data-bs-target="#requisitionTab"]');
+    if (tabBtn) bootstrap.Tab.getOrCreateInstance(tabBtn).show();
+    Swal.fire({ toast: true, position: "top", icon: "success", title: `${chosen.length} item${chosen.length === 1 ? "" : "s"} added to the requisition`, timer: 2500, showConfirmButton: false });
+};
+
+
+/* ---------------------------------------------------------------- Stock take */
+window.stockTakes = [];
+
+window.openStockTakeModal = () => {
+    const admin = isManagerOrAdmin();   // managers see the system stock while counting; staff count blind
+    const docs = (window.productsCache || []).slice().sort((a, b) => (a.data().name || "").localeCompare(b.data().name || ""));
+
+    document.getElementById("stSystemHead").classList.toggle("d-none", !admin);
+    document.getElementById("stBody").innerHTML = docs.map(doc => {
+        const p = doc.data();
+        return `
+            <tr data-name="${normName(p.name)}">
+                <td class="fw-semibold">${p.name}</td>
+                <td class="text-end text-muted ${admin ? "" : "d-none"}">${window.toMixedFraction(p.stock)}</td>
+                <td style="width:130px"><input type="number" step="any" min="0" inputmode="decimal" class="form-control form-control-sm text-end st-input" data-id="${doc.id}" placeholder="-"></td>
+            </tr>`;
+    }).join("") || `<tr><td colspan="3"><div class="empty-state"><i class="fas fa-boxes-stacked"></i>No products to count.</div></td></tr>`;
+
+    document.getElementById("stSearch").value = "";
+    document.getElementById("stNotes").value = "";
+    document.getElementById("stHint").classList.toggle("d-none", admin);
+    updateStockTakeProgress();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById("stockTakeModal")).show();
+};
+
+function updateStockTakeProgress() {
+    const inputs = document.querySelectorAll("#stBody .st-input");
+    const counted = [...inputs].filter(i => i.value !== "").length;
+    document.getElementById("stProgress").textContent = `${counted} of ${inputs.length} counted`;
+}
+
+(function bindStockTakeInputs() {
+    const body = document.getElementById("stBody");
+    if (body) body.addEventListener("input", updateStockTakeProgress);
+    const search = document.getElementById("stSearch");
+    if (search) {
+        search.addEventListener("input", () => {
+            const term = normName(search.value);
+            document.querySelectorAll("#stBody tr").forEach(row => {
+                row.style.display = !term || (row.dataset.name || "").includes(term) ? "" : "none";
+            });
+        });
+    }
+})();
+
+window.saveStockTake = async () => {
+    const inputs = [...document.querySelectorAll("#stBody .st-input")].filter(i => i.value !== "");
+    if (!inputs.length) return Swal.fire("Nothing counted", "Enter the counted quantity for at least one product.", "warning");
+
+    const items = inputs.map(inp => {
+        const doc = window.productsCache.find(d => d.id === inp.dataset.id);
+        const p = doc.data();
+        const system = parseFloat(p.stock) || 0;
+        const counted = parseFloat(inp.value) || 0;
+        const diff = Math.round((counted - system) * 1000) / 1000;
+        const unitCost = parseFloat(p.buyPrice) || 0;
+        return { id: doc.id, name: p.name, system, counted, diff, unitCost, valueDiff: Math.round(diff * unitCost * 100) / 100 };
+    });
+
+    const short = items.filter(i => i.diff < 0);
+    const over = items.filter(i => i.diff > 0);
+    const valueShort = Math.abs(short.reduce((n, i) => n + i.valueDiff, 0));
+    const valueOver = over.reduce((n, i) => n + i.valueDiff, 0);
+
+    const confirm = await Swal.fire({
+        title: "Submit stock count?",
+        text: `${items.length} product${items.length === 1 ? "" : "s"} counted. Products you left blank are not included.`,
+        icon: "question",
+        showCancelButton: true,
+        confirmButtonText: "Submit count"
+    });
+    if (!confirm.isConfirmed) return;
+
+    const by = getCurrentUserEmail() || "unknown";
+    try {
+        const ref = window.db.collection("stock_takes").doc();
+        const confirmed = await writeWithGrace(ref.set({
+            takenBy: by,
+            takenAt: new Date(),
+            dateKey: new Date().toLocaleDateString("en-CA"),
+            itemsCounted: items.length,
+            itemsShort: short.length,
+            itemsOver: over.length,
+            valueShort,
+            valueOver,
+            items,
+            notes: document.getElementById("stNotes").value.trim(),
+            applied: false
+        }));
+        hideModalById("stockTakeModal");
+
+        try {
+            window.sendAlert(
+                `📋 *Stock take submitted*\n` +
+                `By: ${by}\nProducts counted: ${items.length}\n` +
+                (short.length || over.length
+                    ? `❌ Short: ${short.length} item(s), worth KSh ${valueShort.toLocaleString(undefined, { minimumFractionDigits: 2 })}\n⚠️ Over: ${over.length} item(s), worth KSh ${valueOver.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+                    : `✅ Everything matches the system`),
+                "onStockTake"
+            );
+        } catch (alertErr) { console.warn("Stock take alert failed:", alertErr); }
+
+        if (isAdmin()) {
+            const res = await Swal.fire({
+                title: "Stock count saved",
+                html: short.length || over.length
+                    ? `<div class="text-start"><div>Short: <b>${short.length}</b> item(s) · KSh ${valueShort.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div><div>Over: <b>${over.length}</b> item(s) · KSh ${valueOver.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div></div>`
+                    : "Everything matches the system.",
+                icon: short.length ? "warning" : "success",
+                showCancelButton: true,
+                confirmButtonText: "Review details",
+                cancelButtonText: "Close"
+            });
+            if (res.isConfirmed) window.openStockTakeHistory();
+        } else if (isManager()) {
+            Swal.fire({
+                icon: short.length || over.length ? "warning" : "success",
+                title: "Count submitted",
+                text: `${items.length} counted: ${short.length} short, ${over.length} over. An admin can review the details.`
+            });
+        } else {
+            Swal.fire({
+                icon: "success",
+                title: confirmed ? "Count submitted" : "Saved on this device",
+                text: `Your count of ${items.length} product${items.length === 1 ? "" : "s"} has been submitted.`
+            });
+        }
+    } catch (err) {
+        Swal.fire("Could not save the count", err.message, "error");
+    }
+};
+
+window.db.collection("stock_takes").orderBy("takenAt", "desc").limit(30).onSnapshot(snap => {
+    window.stockTakes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const modalEl = document.getElementById("stockTakeHistoryModal");
+    if (modalEl && modalEl.classList.contains("show")) renderStockTakeHistory();
+}, err => console.warn("Stock takes listener:", err));
+
+window.openStockTakeHistory = () => {
+    if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
+    renderStockTakeHistory();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById("stockTakeHistoryModal")).show();
+};
+
+function renderStockTakeHistory() {
+    const box = document.getElementById("stHistoryBody");
+    if (!box) return;
+    const money = (n) => insightMoney(n);
+
+    if (!window.stockTakes.length) {
+        box.innerHTML = `<div class="empty-state"><i class="fas fa-clipboard-check"></i>No stock counts have been submitted yet.</div>`;
+        return;
+    }
+
+    box.innerHTML = window.stockTakes.map(t => {
+        const when = t.takenAt && t.takenAt.toDate ? t.takenAt.toDate() : new Date(t.takenAt);
+        const diffs = (t.items || []).filter(i => i.diff !== 0).sort((a, b) => Math.abs(b.valueDiff) - Math.abs(a.valueDiff));
+        const matched = (t.items || []).length - diffs.length;
+        const result = diffs.length
+            ? `<span class="cd-pill bad">Short ${t.itemsShort} · ${money(t.valueShort)}</span> <span class="cd-pill warn">Over ${t.itemsOver} · ${money(t.valueOver)}</span>`
+            : `<span class="cd-pill ok">All match</span>`;
+
+        return `
+            <details class="st-take">
+                <summary>
+                    <span class="st-when">${when.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}<small>${when.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</small></span>
+                    <span class="st-by">${t.takenBy || ""}<small>${t.itemsCounted} counted</small></span>
+                    <span class="st-result">${result}</span>
+                    ${t.applied ? '<span class="badge text-bg-success">Applied</span>' : ""}
+                    <i class="fas fa-chevron-down st-chev"></i>
+                </summary>
+                <div class="st-detail">
+                    ${t.notes ? `<div class="small text-muted mb-2"><i class="fas fa-note-sticky me-1"></i>${t.notes}</div>` : ""}
+                    ${diffs.length ? `
+                    <div class="table-wrap"><div class="table-responsive">
+                        <table class="table table-sm align-middle table-compact mb-0">
+                            <thead><tr><th>Product</th><th class="text-end">System</th><th class="text-end">Counted</th><th class="text-end">Difference</th><th class="text-end">Value</th></tr></thead>
+                            <tbody>${diffs.map(i => `
+                                <tr>
+                                    <td class="fw-semibold">${i.name}</td>
+                                    <td class="text-end">${window.toMixedFraction(i.system)}</td>
+                                    <td class="text-end">${window.toMixedFraction(i.counted)}</td>
+                                    <td class="text-end fw-bold ${i.diff < 0 ? "text-danger" : "text-success"}">${i.diff > 0 ? "+" : ""}${window.toMixedFraction(i.diff)}</td>
+                                    <td class="text-end ${i.diff < 0 ? "text-danger" : "text-success"}">${i.valueDiff < 0 ? "-" : ""}${money(Math.abs(i.valueDiff))}</td>
+                                </tr>`).join("")}
+                            </tbody>
+                        </table>
+                    </div></div>` : ""}
+                    <div class="small text-muted mt-2">${matched} product${matched === 1 ? "" : "s"} matched exactly.</div>
+                    <div class="d-flex gap-2 justify-content-end flex-wrap mt-3">
+                        ${!t.applied && diffs.length ? `<button class="btn btn-custom btn-sm" onclick="window.applyStockTake('${t.id}')"><i class="fas fa-check me-1"></i>Update stock to match this count</button>` : ""}
+                        <button class="btn btn-soft btn-sm" onclick="window.deleteStockTake('${t.id}')"><i class="fas fa-trash-can text-danger me-1"></i>Delete</button>
+                    </div>
+                </div>
+            </details>`;
+    }).join("");
+}
+
+window.applyStockTake = async (id) => {
+    if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
+    const t = window.stockTakes.find(x => x.id === id);
+    if (!t) return;
+
+    const diffs = (t.items || []).filter(i => i.diff !== 0 && window.productsCache.find(d => d.id === i.id));
+    if (!diffs.length) return Swal.fire("Nothing to update", "These products no longer exist or already match.", "info");
+
+    const res = await Swal.fire({
+        title: "Update stock?",
+        html: `Stock for <b>${diffs.length}</b> product${diffs.length === 1 ? "" : "s"} will change by the difference found in this count. Sales made since the count are kept. Each change is added to the Restock Logs.`,
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonText: "Yes, update stock"
+    });
+    if (!res.isConfirmed) return;
+
+    try {
+        for (let start = 0; start < diffs.length; start += 200) {
+            const batch = window.db.batch();
+            diffs.slice(start, start + 200).forEach(i => {
+                const doc = window.productsCache.find(d => d.id === i.id);
+                const current = parseFloat(doc.data().stock) || 0;
+                const after = Math.max(0, current + i.diff);
+                batch.update(window.db.collection("products").doc(i.id), { stock: after });
+                batch.set(window.db.collection("restock_logs").doc(), {
+                    productId: i.id,
+                    name: i.name,
+                    quantityAdded: i.diff,
+                    previousStock: current,
+                    afterStock: after,
+                    reason: "Stock take adjustment",
+                    restockedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+            });
+            await batch.commit();
+        }
+        await window.db.collection("stock_takes").doc(id).update({
+            applied: true,
+            appliedBy: getCurrentUserEmail() || "unknown",
+            appliedAt: new Date()
+        });
+        Swal.fire("Stock updated", `${diffs.length} product${diffs.length === 1 ? "" : "s"} now match the count.`, "success");
+    } catch (err) {
+        Swal.fire("Could not update stock", err.message, "error");
+    }
+};
+
+window.deleteStockTake = async (id) => {
+    if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
+    const res = await Swal.fire({ title: "Delete this stock count?", text: "Stock levels are not changed.", icon: "warning", showCancelButton: true, confirmButtonColor: "#d33", confirmButtonText: "Yes, delete" });
+    if (!res.isConfirmed) return;
+    try { await window.db.collection("stock_takes").doc(id).delete(); } catch (err) { Swal.fire("Error", err.message, "error"); }
+};
+
+
+/* ==========================================================================
+   SECTION 12E: CATEGORIES, BUSY TIMES AND SMART WARNINGS
+   ========================================================================== */
+
+/* ---------------------------------------------------------------- Categories */
+const DEFAULT_CATEGORIES = ["Beer", "Cider & ready-to-drink", "Wine", "Spirits", "Soft drinks & water", "Cigarettes", "Snacks", "Other"];
+
+// Best-guess keywords used by "Suggest categories". The admin always reviews the result before saving.
+const CATEGORY_RULES = [
+    ["Cigarettes", ["cigarette", "rooster", "rothsman", "rothman", "sportsman", "embassy", "dunhill", "supermatch", "safari kingsize", "menthol", "lighter", "matchbox"]],
+    ["Beer", ["tusker", "guinness", "heineken", "pilsner", "white cap", "whitecap", "balozi", "castle", "lager", "stout", "serengeti", "carlsberg", "corona", "budweiser", "windhoek", "summit", " beer"]],
+    ["Cider & ready-to-drink", ["hunters", "savanna", "snapp", "smirnoff ice", "smirnoff guarana", "redds", "cider", "alcopop"]],
+    ["Wine", [" wine", "4th street", "four cousins", "caprice", "cabernet", "merlot", "sauvignon", "chardonnay", "champagne", "moet", "robertson", "casabuena", "drostdy"]],
+    ["Spirits", ["whisky", "whiskey", "vodka", " gin", "rum", "brandy", "brady", "cognac", "tequila", "liqueur", "baileys", "amarula", "jameson", "johnnie", "jack daniel", "black label", "red label", "chrome", "gilbey", "smirnoff", "konyagi", "kenya cane", "captain morgan", "hennessy", "remy", "martell", "jagermeister", "chivas", "glenfiddich", "ballantine", "general meakins", "richot", "napoleon", "v&a", "best ", "viceroy", "bond 7", "county"]],
+    ["Soft drinks & water", ["soda", "coca", "coke", "fanta", "sprite", "pepsi", "stoney", "krest", "mirinda", "tonic", "red bull", "monster", "predator", "power play", "water", "juice", "oris", "minute maid", "delmonte", "aqua", "dasani", "energy", "lemonade", "ginger", "malt"]],
+    ["Snacks", ["crisps", "chips", "nuts", "peanut", "biscuit", "gum", "mint", "chocolate", "sausage", "egg", "popcorn"]]
+];
+
+function suggestCategory(name) {
+    const n = " " + normName(name) + " ";
+    for (const [category, words] of CATEGORY_RULES) {
+        if (words.some(w => n.includes(w))) return category;
+    }
+    return "";
+}
+
+window.productCategory = "all";          // "all" | "__none" | a category name
+window.productCategoryList = [];
+
+/**
+ * Draws the Products table for the current search text and category chip
+ */
+window.renderProductsFiltered = function () {
+    const all = window.productsCache || [];
+    const searchEl = document.getElementById("searchInput");
+    const term = normName(searchEl ? searchEl.value : "");
+
+    const counts = {};
+    let uncategorised = 0;
+    all.forEach(d => {
+        const c = (d.data().category || "").trim();
+        if (c) counts[c] = (counts[c] || 0) + 1; else uncategorised++;
+    });
+    const names = Object.keys(counts).sort((a, b) => a.localeCompare(b));
+
+    window.productCategoryList = [{ key: "all", label: "All", count: all.length }]
+        .concat(names.map(n => ({ key: n, label: n, count: counts[n] })));
+    if (uncategorised && names.length) window.productCategoryList.push({ key: "__none", label: "Uncategorised", count: uncategorised });
+    if (!window.productCategoryList.some(c => c.key === window.productCategory)) window.productCategory = "all";
+
+    const chips = document.getElementById("productCategoryChips");
+    if (chips) {
+        chips.classList.toggle("d-none", names.length === 0);
+        chips.innerHTML = window.productCategoryList.map((c, i) =>
+            `<button class="btn btn-soft btn-sm ${c.key === window.productCategory ? "active" : ""}" onclick="window.setProductCategory(${i})">${escHtml(c.label)} <span class="pp-count">${c.count}</span></button>`).join("");
+    }
+
+    const dl = document.getElementById("categoryList");
+    if (dl) {
+        dl.innerHTML = Array.from(new Set(DEFAULT_CATEGORIES.concat(names))).map(n => `<option value="${escHtml(n)}"></option>`).join("");
+    }
+
+    const cat = window.productCategory;
+    const filtered = all.filter(d => {
+        const p = d.data();
+        const c = (p.category || "").trim();
+        if (cat === "__none" && c) return false;
+        if (cat !== "all" && cat !== "__none" && c !== cat) return false;
+        return !term || normName(p.name).includes(term);
+    });
+    window.renderProducts(filtered);
+};
+
+window.setProductCategory = (i) => {
+    const item = window.productCategoryList[i];
+    if (!item) return;
+    window.productCategory = item.key;
+    window.renderProductsFiltered();
+};
+
+window.openCategoriesModal = () => {
+    if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
+    const docs = (window.productsCache || []).slice().sort((a, b) => (a.data().name || "").localeCompare(b.data().name || ""));
+    document.getElementById("catBody").innerHTML = docs.map(d => {
+        const p = d.data();
+        const cat = (p.category || "").trim();
+        return `
+            <tr data-name="${escHtml(normName(p.name))}">
+                <td class="fw-semibold">${escHtml(p.name)}</td>
+                <td style="min-width:200px"><input list="categoryList" class="form-control form-control-sm cat-input" data-id="${d.id}" data-original="${escHtml(cat)}" value="${escHtml(cat)}" placeholder="No category"></td>
+            </tr>`;
+    }).join("") || `<tr><td colspan="2"><div class="empty-state"><i class="fas fa-boxes-stacked"></i>No products yet.</div></td></tr>`;
+    document.getElementById("catSearch").value = "";
+    document.getElementById("catStatus").textContent = "";
+    bootstrap.Modal.getOrCreateInstance(document.getElementById("categoriesModal")).show();
+};
+
+(function bindCategorySearch() {
+    const el = document.getElementById("catSearch");
+    if (!el) return;
+    el.addEventListener("input", () => {
+        const term = normName(el.value);
+        document.querySelectorAll("#catBody tr").forEach(row => {
+            row.style.display = !term || (row.dataset.name || "").includes(term) ? "" : "none";
+        });
+    });
+})();
+
+window.suggestAllCategories = () => {
+    let filled = 0, unknown = 0;
+    document.querySelectorAll("#catBody .cat-input").forEach(input => {
+        if (input.value.trim()) return;
+        const guess = suggestCategory(input.closest("tr").querySelector("td").textContent);
+        if (guess) { input.value = guess; filled++; } else unknown++;
+    });
+    document.getElementById("catStatus").textContent = `Filled in ${filled} product${filled === 1 ? "" : "s"}${unknown ? `. ${unknown} could not be guessed - type those yourself.` : "."} Check them, then press Save.`;
+};
+
+window.saveCategories = async () => {
+    if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
+    const changed = [...document.querySelectorAll("#catBody .cat-input")]
+        .filter(i => i.value.trim() !== (i.dataset.original || ""))
+        .map(i => ({ id: i.dataset.id, category: i.value.trim() }));
+    if (!changed.length) return Swal.fire("Nothing changed", "You have not changed any category.", "info");
+
+    try {
+        for (let start = 0; start < changed.length; start += 400) {
+            const batch = window.db.batch();
+            changed.slice(start, start + 400).forEach(c => {
+                batch.update(window.db.collection("products").doc(c.id), { category: c.category });
+            });
+            await batch.commit();
+        }
+        hideModalById("categoriesModal");
+        Swal.fire({ icon: "success", title: "Categories saved", text: `${changed.length} product${changed.length === 1 ? "" : "s"} updated.`, timer: 1800, showConfirmButton: false });
+    } catch (err) {
+        Swal.fire("Could not save", err.message, "error");
+    }
+};
+
+/**
+ * Profit grouped by category (uses the same rows as Profit per product)
+ */
+function renderCategoryProfit() {
+    const body = document.getElementById("catProfitBody");
+    if (!body) return;
+
+    const groups = {};
+    (window.ppRows || []).forEach(r => {
+        const key = r.category || "Uncategorised";
+        const g = groups[key] || (groups[key] = { name: key, products: 0, units: 0, revenue: 0, cost: 0, profit: 0 });
+        g.products++; g.units += r.units; g.revenue += r.revenue; g.cost += r.cost; g.profit += r.profit;
+    });
+    const list = Object.values(groups).sort((a, b) => b.profit - a.profit);
+    const totalProfit = list.reduce((n, g) => n + Math.max(0, g.profit), 0);
+
+    body.innerHTML = list.length ? list.map(g => {
+        const margin = g.revenue > 0 ? (g.profit / g.revenue) * 100 : 0;
+        const share = totalProfit > 0 && g.profit > 0 ? (g.profit / totalProfit) * 100 : 0;
+        return `
+            <tr>
+                <td class="fw-semibold">${escHtml(g.name)}<small class="text-muted d-block">${g.products} product${g.products === 1 ? "" : "s"}</small></td>
+                <td class="text-end">${window.toMixedFraction(g.units)}</td>
+                <td class="text-end">${insightMoney(g.revenue)}</td>
+                <td class="text-end text-muted">${insightMoney(g.cost)}</td>
+                <td class="text-end fw-bold ${g.profit >= 0 ? "text-success" : "text-danger"}">${insightMoney(g.profit)}</td>
+                <td class="text-end">${margin.toFixed(1)}%</td>
+                <td style="min-width:130px"><div class="small text-muted">${share.toFixed(0)}% of profit</div><div class="pp-bar"><span style="width:${share}%"></span></div></td>
+            </tr>`;
+    }).join("") : `<tr><td colspan="7"><div class="empty-state"><i class="fas fa-layer-group"></i>No data yet.</div></td></tr>`;
+}
+
+
+/* ---------------------------------------------------------------- Busy times */
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const hourShort = (h) => `${h % 12 || 12}${h < 12 ? "a" : "p"}`;
+const hourLong = (h) => `${h % 12 || 12} ${h < 12 ? "AM" : "PM"}`;
+
+/**
+ * d = { hourRev, hourOrders, dowRev, dowOrders, dowCount, colors, kFormat, days }
+ */
+window.renderBusyTimes = (d) => {
+    const { hourRev, hourOrders, dowRev, dowOrders, dowCount, colors } = d;
+    const totalRev = hourRev.reduce((n, v) => n + v, 0);
+
+    // ---- by hour
+    const maxHour = Math.max(...hourRev);
+    const hourColors = hourRev.map(v => (maxHour > 0 && v >= maxHour * 0.6) ? colors.brand : colors.brand + "55");
+    makeInsightChart("busyHourChart", {
+        type: "bar",
+        data: {
+            labels: hourRev.map((_, h) => hourShort(h)),
+            datasets: [{ label: "Sales", data: hourRev, backgroundColor: hourColors, borderRadius: 4, maxBarThickness: 18 }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        title: (items) => `${hourLong(items[0].dataIndex)} - ${hourLong((items[0].dataIndex + 1) % 24)}`,
+                        label: (ctx) => ` ${insightMoney(ctx.parsed.y)} · ${hourOrders[ctx.dataIndex]} order${hourOrders[ctx.dataIndex] === 1 ? "" : "s"}`
+                    }
+                }
+            },
+            scales: {
+                x: { grid: { display: false }, ticks: { color: colors.muted, maxRotation: 0, autoSkip: true, maxTicksLimit: 12 } },
+                y: { beginAtZero: true, grid: { color: colors.grid }, ticks: { color: colors.muted, callback: d.kFormat } }
+            }
+        }
+    });
+
+    // ---- by weekday (average per day), Monday first
+    const order = [1, 2, 3, 4, 5, 6, 0];
+    const avg = order.map(dow => dowCount[dow] > 0 ? dowRev[dow] / dowCount[dow] : 0);
+    const maxAvg = Math.max(...avg);
+    makeInsightChart("busyDayChart", {
+        type: "bar",
+        data: {
+            labels: order.map(dow => DAY_NAMES[dow].slice(0, 3)),
+            datasets: [{ label: "Average per day", data: avg, backgroundColor: avg.map(v => (maxAvg > 0 && v === maxAvg) ? colors.brand : colors.brand + "55"), borderRadius: 6, maxBarThickness: 36 }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        title: (items) => DAY_NAMES[order[items[0].dataIndex]],
+                        label: (ctx) => {
+                            const dow = order[ctx.dataIndex];
+                            return ` Average ${insightMoney(ctx.parsed.y)} · ${dowOrders[dow]} order${dowOrders[dow] === 1 ? "" : "s"} over ${dowCount[dow]} day${dowCount[dow] === 1 ? "" : "s"}`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: { grid: { display: false }, ticks: { color: colors.muted } },
+                y: { beginAtZero: true, grid: { color: colors.grid }, ticks: { color: colors.muted, callback: d.kFormat } }
+            }
+        }
+    });
+
+    // ---- plain-language summary
+    const box = document.getElementById("busyInsights");
+    if (!box) return;
+    if (totalRev <= 0) {
+        box.innerHTML = `<div class="busy-chip"><span>No sales in this period yet.</span></div>`;
+        return;
+    }
+
+    let peakStart = 0, peakSum = -1;
+    for (let h = 0; h < 24; h++) {
+        const s = hourRev[h] + hourRev[(h + 1) % 24] + hourRev[(h + 2) % 24];
+        if (s > peakSum) { peakSum = s; peakStart = h; }
+    }
+    const busiestHour = hourRev.indexOf(maxHour);
+    const withData = order.filter(dow => dowCount[dow] > 0);
+    const busiestDow = withData.reduce((a, b) => (dowRev[b] / dowCount[b] > dowRev[a] / dowCount[a] ? b : a), withData[0]);
+    const quietestDow = withData.reduce((a, b) => (dowRev[b] / dowCount[b] < dowRev[a] / dowCount[a] ? b : a), withData[0]);
+
+    box.innerHTML = `
+        <div class="busy-chip"><i class="fas fa-fire"></i><span><small>Busiest hour</small><b>${hourLong(busiestHour)} - ${hourLong((busiestHour + 1) % 24)}</b></span></div>
+        <div class="busy-chip"><i class="fas fa-clock"></i><span><small>Peak window (3 hours)</small><b>${hourLong(peakStart)} - ${hourLong((peakStart + 3) % 24)}</b> <em>${Math.round((peakSum / totalRev) * 100)}% of sales</em></span></div>
+        <div class="busy-chip"><i class="fas fa-calendar-day"></i><span><small>Busiest day</small><b>${DAY_NAMES[busiestDow]}</b> <em>avg ${insightMoney(dowRev[busiestDow] / dowCount[busiestDow])}</em></span></div>
+        <div class="busy-chip"><i class="fas fa-moon"></i><span><small>Quietest day</small><b>${DAY_NAMES[quietestDow]}</b> <em>avg ${insightMoney(dowRev[quietestDow] / dowCount[quietestDow])}</em></span></div>`;
+};
+
+
+/* ----------------------------------------------------------- Smart warnings */
+const dayKeyOf = (d) => d.toLocaleDateString("en-CA");
+
+function isoWeekKey(d) {
+    const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    const dayNum = t.getUTCDay() || 7;
+    t.setUTCDate(t.getUTCDate() + 4 - dayNum);
+    const yearStart = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
+    return `${t.getUTCFullYear()}-W${Math.ceil(((t - yearStart) / 86400000 + 1) / 7)}`;
+}
+
+/**
+ * Looks at sales and stock and returns a list of things the owner should know about right now.
+ * Items with alert: true are also sent as phone alerts (once per day / week).
+ */
+function computeSmartWarnings(now = new Date()) {
+    const out = [];
+    const sales = window.allSales || [];
+    const products = window.productsCache || [];
+    const todayKey = dayKeyOf(now);
+    const money = (n) => "KSh " + Math.round(n).toLocaleString();
+
+    // 1. Stock that will run out within 2 days (or already has) at the current selling pace
+    const since30 = now.getTime() - 30 * 24 * 60 * 60 * 1000;
+    const sold30 = {};
+    sales.forEach(s => {
+        if (s.date.toDate().getTime() < since30) return;
+        (s.items || []).forEach(i => { const k = normName(i.name); sold30[k] = (sold30[k] || 0) + itemStockQty(i); });
+    });
+    products.forEach(doc => {
+        const p = doc.data();
+        const stock = parseFloat(p.stock) || 0;
+        const qty30 = sold30[normName(p.name)] || 0;
+        if (qty30 < 3) return;                       // too little history to predict anything
+        const rate = qty30 / 30;
+        const daysLeft = stock / rate;
+        if (daysLeft > 2) return;
+        const gone = stock <= 0;
+        out.push({
+            key: `runout:${doc.id}:${todayKey}`, type: "runout", group: "stock", severity: gone || daysLeft < 1 ? "high" : "medium", alert: true, icon: "fa-box-open",
+            data: { name: p.name, gone, daysLeft, rate, stock },
+            title: gone ? `${p.name} is out of stock` : `${p.name} will run out in ${daysLeft < 1 ? "less than a day" : Math.ceil(daysLeft) + " days"}`,
+            detail: gone ? `It sells about ${rate.toFixed(1)} a day.` : `${window.toMixedFraction(stock)} left, selling about ${rate.toFixed(1)} a day.`
+        });
+    });
+
+    // 2. Sales today compared with the same weekday last week, up to the same time of day
+    const lastWeek = new Date(now); lastWeek.setDate(lastWeek.getDate() - 7);
+    const lastWeekKey = dayKeyOf(lastWeek);
+    const minutesNow = now.getHours() * 60 + now.getMinutes();
+    let todaySoFar = 0, lastWeekSoFar = 0;
+    sales.forEach(s => {
+        const d = s.date.toDate();
+        const k = dayKeyOf(d);
+        if (k === todayKey) todaySoFar += parseFloat(s.total) || 0;
+        else if (k === lastWeekKey && d.getHours() * 60 + d.getMinutes() <= minutesNow) lastWeekSoFar += parseFloat(s.total) || 0;
+    });
+    if (lastWeekSoFar >= 3000 && todaySoFar < lastWeekSoFar * 0.6) {
+        const pct = Math.round((1 - todaySoFar / lastWeekSoFar) * 100);
+        out.push({
+            key: `pace:${todayKey}`, type: "pace", group: "sales", severity: "medium", alert: true, icon: "fa-arrow-trend-down",
+            data: { heading: `Today compared with last ${DAY_NAMES[now.getDay()]}`, pct, a: todaySoFar, b: lastWeekSoFar, labelA: "Today so far", labelB: `Last ${DAY_NAMES[now.getDay()]} by this time` },
+            title: `Sales are ${pct}% below last ${DAY_NAMES[now.getDay()]}`,
+            detail: `${money(todaySoFar)} so far today, against ${money(lastWeekSoFar)} by this time last ${DAY_NAMES[now.getDay()]}.`
+        });
+    }
+
+    // 3. The last 7 days compared with the 7 days before
+    const startOf = (offset) => { const d = new Date(now); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - offset); return d.getTime(); };
+    const last7Start = startOf(6), prev7Start = startOf(13);
+    let last7 = 0, prev7 = 0;
+    sales.forEach(s => {
+        const t = s.date.toDate().getTime();
+        const total = parseFloat(s.total) || 0;
+        if (t >= last7Start) last7 += total; else if (t >= prev7Start) prev7 += total;
+    });
+    if (prev7 >= 10000 && last7 <= prev7 * 0.75) {
+        const pct = Math.round((1 - last7 / prev7) * 100);
+        out.push({
+            key: `weekdrop:${isoWeekKey(now)}`, type: "weekdrop", group: "sales", severity: "medium", alert: true, icon: "fa-chart-line",
+            data: { heading: "Last 7 days compared with the week before", pct, a: last7, b: prev7, labelA: "Last 7 days", labelB: "The 7 days before" },
+            title: `The last 7 days are ${pct}% lower than the 7 days before`,
+            detail: `${money(last7)} against ${money(prev7)}.`
+        });
+    }
+
+    // 4. Yesterday had sales but was never closed
+    const y = new Date(now); y.setDate(y.getDate() - 1);
+    const yKey = dayKeyOf(y);
+    const yesterdayHadSales = sales.some(s => dayKeyOf(s.date.toDate()) === yKey);
+    if (yesterdayHadSales && !(window.dayClosings || {})[yKey] && now.getHours() >= 10) {
+        out.push({
+            key: `unclosed:${yKey}`, type: "unclosed", group: "books", severity: "medium", alert: true, icon: "fa-calendar-xmark",
+            data: { dateKey: yKey, label: y.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" }) },
+            title: `Yesterday (${y.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" })}) was not closed`,
+            detail: "Nobody counted the cash for that day. Use Close Day and pick yesterday's date."
+        });
+    }
+
+    // 5. Selling below cost (shown here only)
+    products.forEach(doc => {
+        const p = doc.data();
+        const price = parseFloat(p.price) || 0, buy = parseFloat(p.buyPrice) || 0;
+        if (price > 0 && buy > 0 && price < buy) {
+            out.push({
+                key: `belowcost:${doc.id}`, type: "belowcost", group: "pricing", severity: "high", alert: false, icon: "fa-triangle-exclamation",
+                data: { name: p.name, price, buy },
+                title: `${p.name} sells for less than it costs`,
+                detail: `Sell price ${money(price)}, buy price ${money(buy)}. Every sale loses ${money(buy - price)}.`
+            });
+        }
+    });
+
+    const rank = { high: 0, medium: 1, low: 2 };
+    return out.sort((a, b) => rank[a.severity] - rank[b.severity]);
+}
+
+/**
+ * Opens Close Day already set to a particular date (used by the "not closed" warning)
+ */
+window.openCloseDayFor = (dateKey) => {
+    window.openCloseDayModal();
+    document.getElementById("closeDayDate").value = dateKey;
+    window.updateCloseDaySummary();
+};
+
+window.renderSmartWarnings = () => {
+    const box = document.getElementById("smartWarnings");
+    if (!box) return;
+
+    const list = computeSmartWarnings();
+    const urgent = list.filter(w => w.severity === "high").length;
+    const watch = list.length - urgent;
+    const money = (n) => "KSh " + Math.round(n).toLocaleString();
+
+    const sub = document.getElementById("smartWarnSub");
+    if (sub) sub.textContent = list.length ? `${list.length} thing${list.length === 1 ? "" : "s"} need${list.length === 1 ? "s" : ""} your attention` : "Everything looks healthy";
+    const summary = document.getElementById("smartWarnSummary");
+    if (summary) {
+        summary.innerHTML = list.length
+            ? (urgent ? `<span class="sw-chip bad"><b>${urgent}</b> urgent</span>` : "") + (watch ? `<span class="sw-chip warn"><b>${watch}</b> to watch</span>` : "")
+            : `<span class="sw-chip ok"><i class="fas fa-circle-check me-1"></i>All clear</span>`;
+    }
+    const badge = document.getElementById("smartWarnCount");
+    if (badge) { badge.textContent = list.length; badge.classList.toggle("d-none", list.length === 0); }
+
+    if (!list.length) {
+        box.innerHTML = `
+            <div class="sw-clear">
+                <span class="sw-clear-ico"><i class="fas fa-shield-heart"></i></span>
+                <div><div class="fw-bold">All clear</div><div class="small">Stock levels, sales and closings all look healthy right now.</div></div>
+            </div>`;
+        return;
+    }
+
+    const card = (cls, icon, title, count, body, footer) => `
+        <div class="sw-card ${cls}">
+            <div class="sw-card-head">
+                <span class="sw-card-ico"><i class="fas ${icon}"></i></span>
+                <span class="sw-card-title">${title}</span>
+                <span class="sw-card-count">${count}</span>
+            </div>
+            <div class="sw-card-body">${body}</div>
+            ${footer ? `<div class="sw-card-foot">${footer}</div>` : ""}
+        </div>`;
+
+    const cards = [];
+
+    // ---- stock: one compact card instead of one row per product
+    const stock = list.filter(w => w.group === "stock");
+    if (stock.length) {
+        const row = (w) => {
+            const d = w.data;
+            const status = d.gone ? `<span class="sw-status bad">Out of stock</span>`
+                : `<span class="sw-status ${d.daysLeft < 1 ? "bad" : "warn"}">${d.daysLeft < 1 ? "Under a day left" : Math.ceil(d.daysLeft) + " days left"}</span>`;
+            return `<div class="sw-row"><div class="sw-row-main"><b>${escHtml(d.name)}</b><small>sells about ${d.rate.toFixed(1)} a day${d.gone ? "" : " · " + window.toMixedFraction(d.stock) + " left"}</small></div>${status}</div>`;
+        };
+        const shown = stock.slice(0, 5), rest = stock.slice(5);
+        const body = shown.map(row).join("") + (rest.length ? `<details class="sw-more"><summary>Show ${rest.length} more</summary>${rest.map(row).join("")}</details>` : "");
+        cards.push(card("danger", "fa-box-open", "Stock running out", stock.length, body,
+            `<button class="btn btn-custom btn-sm" onclick="window.openReorderModal()"><i class="fas fa-wand-magic-sparkles me-1"></i>Suggest reorder</button>`));
+    }
+
+    // ---- sales: a big percentage and a simple comparison
+    list.filter(w => w.group === "sales").forEach(w => {
+        const d = w.data;
+        const max = Math.max(d.a, d.b, 1);
+        const body = `
+            <div class="sw-metric">
+                <div class="sw-big down"><i class="fas fa-arrow-down"></i>${d.pct}%</div>
+                <div class="sw-metric-text">${escHtml(d.heading)}</div>
+            </div>
+            <div class="sw-compare">
+                <div class="sw-cmp-row"><span>${escHtml(d.labelA)}</span><b>${money(d.a)}</b></div>
+                <div class="sw-cmp-bar"><span class="now" style="width:${(d.a / max) * 100}%"></span></div>
+                <div class="sw-cmp-row"><span>${escHtml(d.labelB)}</span><b>${money(d.b)}</b></div>
+                <div class="sw-cmp-bar"><span class="before" style="width:${(d.b / max) * 100}%"></span></div>
+            </div>
+            <div class="sw-takeaway"><b>${money(d.b - d.a)} less</b> than ${d.labelB.charAt(0).toLowerCase() + d.labelB.slice(1)}.</div>`;
+        cards.push(card("warn sales", w.icon, w.type === "pace" ? "Sales pace" : "Weekly trend", "", body));
+    });
+
+    // ---- books: days that were never closed
+    const books = list.filter(w => w.group === "books");
+    if (books.length) {
+        const body = books.map(w => `
+            <div class="sw-row">
+                <div class="sw-row-main"><b>${escHtml(w.data.label)} was not closed</b><small>Nobody counted the cash for that day.</small></div>
+                <button class="btn btn-soft btn-sm" onclick="window.openCloseDayFor('${w.data.dateKey}')">Close it</button>
+            </div>`).join("");
+        cards.push(card("warn", "fa-calendar-xmark", "Closing", books.length, body));
+    }
+
+    // ---- pricing: products that lose money on every sale
+    const pricing = list.filter(w => w.group === "pricing");
+    if (pricing.length) {
+        const row = (w) => `
+            <div class="sw-row">
+                <div class="sw-row-main"><b>${escHtml(w.data.name)}</b><small>sells for ${money(w.data.price)} but costs ${money(w.data.buy)}</small></div>
+                <span class="sw-status bad">Loses ${money(w.data.buy - w.data.price)} each</span>
+            </div>`;
+        const shown = pricing.slice(0, 5), rest = pricing.slice(5);
+        cards.push(card("danger", "fa-tag", "Priced below cost", pricing.length,
+            shown.map(row).join("") + (rest.length ? `<details class="sw-more"><summary>Show ${rest.length} more</summary>${rest.map(row).join("")}</details>` : "")));
+    }
+
+    box.innerHTML = `<div class="sw-grid">${cards.join("")}</div>`;
+};
+
+/**
+ * Sends new warnings to the admin's phone. Each warning is sent once; the shared record in Firebase stops
+ * several open devices from sending the same message.
+ */
+window.runSmartAlerts = async () => {
+    const c = window.alertConfig || {};
+    if (c.onSmart === false || activeChannels(c).length === 0 || !navigator.onLine) return;
+    if (!(window.productsCache || []).length) return;     // data not loaded yet
+
+    const warns = computeSmartWarnings().filter(w => w.alert);
+    if (!warns.length) return;
+
+    const today = dayKeyOf(new Date());
+    const cutoff = (() => { const d = new Date(); d.setDate(d.getDate() - 3); return dayKeyOf(d); })();
+    let fresh = [];
+
+    try {
+        const ref = window.db.collection("settings").doc("alert_state");
+        fresh = await window.db.runTransaction(async (tx) => {
+            const snap = await tx.get(ref);
+            const sent = (snap.exists && snap.data().sent) || {};
+            const mine = warns.filter(w => !sent[w.key]);
+            if (!mine.length) return [];
+            const keep = {};
+            Object.keys(sent).forEach(k => { if (String(sent[k]) >= cutoff) keep[k] = sent[k]; });
+            mine.forEach(w => { keep[w.key] = today; });
+            tx.set(ref, { sent: keep, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+            return mine;
+        });
+    } catch (err) {
+        // No shared record available: remember on this device instead
+        try {
+            const seen = JSON.parse(localStorage.getItem("madollar_smart_sent") || "{}");
+            fresh = warns.filter(w => !seen[w.key]);
+            fresh.forEach(w => { seen[w.key] = today; });
+            Object.keys(seen).forEach(k => { if (String(seen[k]) < cutoff) delete seen[k]; });
+            localStorage.setItem("madollar_smart_sent", JSON.stringify(seen));
+        } catch (e) { fresh = []; }
+    }
+
+    if (!fresh.length) return;
+    window.sendAlert(`🧠 *Smart warnings*\n` + fresh.map(w => `• ${w.title}\n  ${w.detail}`).join("\n"), "onSmart");
+};
+
+window.startSmartWarningTimer = () => {
+    if (window.smartTimerStarted) return;
+    window.smartTimerStarted = true;
+    setTimeout(() => window.runSmartAlerts(), 25000);
+    setInterval(() => window.runSmartAlerts(), 30 * 60 * 1000);
+};
+
+
+/* ==========================================================================
    SECTION 13: UI NAVIGATION & SCROLL HELPERS
    ========================================================================== */
 
@@ -4727,7 +6294,7 @@ window.alertConfig = {
     tgToken: "", tgChatId: "",
     phone: "", apiKey: "",
     useEmail: false, emailKey: "", emailImportantOnly: false,
-    onSale: true, onLowStock: true, onDayClose: true
+    onSale: true, onLowStock: true, onDayClose: true, onStockTake: true, onSmart: true
 };
 
 // Live copy of the admin's alert settings (read by every device so any till can send the alert)
@@ -4843,7 +6410,7 @@ window.sendAlert = (text, type) => {
 };
 
 window.notifySale = (sale) => {
-    const lines = (sale.items || []).map(i => `• ${window.toMixedFraction(i.qty)} x ${i.name} (KSh ${((parseFloat(i.price) || 0) * (parseFloat(i.qty) || 0)).toLocaleString()})`);
+    const lines = (sale.items || []).map(i => `• ${window.toMixedFraction(i.qty)} x ${itemLabel(i)} (KSh ${((parseFloat(i.price) || 0) * (parseFloat(i.qty) || 0)).toLocaleString()})`);
     window.sendAlert(
         `🧾 *New sale* - KSh ${(sale.total || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
         `Customer: ${sale.customer || "Guest"}\n` +
@@ -4905,6 +6472,8 @@ window.openAlertsModal = () => {
     document.getElementById("alertsOnSale").checked = c.onSale !== false;
     document.getElementById("alertsOnLowStock").checked = c.onLowStock !== false;
     document.getElementById("alertsOnDayClose").checked = c.onDayClose !== false;
+    document.getElementById("alertsOnStockTake").checked = c.onStockTake !== false;
+    document.getElementById("alertsOnSmart").checked = c.onSmart !== false;
     document.getElementById("alertsStatus").textContent = "";
     window.toggleAlertChannel();
     bootstrap.Modal.getOrCreateInstance(document.getElementById("alertsModal")).show();
@@ -4924,7 +6493,9 @@ function readAlertForm() {
         emailImportantOnly: document.getElementById("alertsEmailImportant").checked,
         onSale: document.getElementById("alertsOnSale").checked,
         onLowStock: document.getElementById("alertsOnLowStock").checked,
-        onDayClose: document.getElementById("alertsOnDayClose").checked
+        onDayClose: document.getElementById("alertsOnDayClose").checked,
+        onStockTake: document.getElementById("alertsOnStockTake").checked,
+        onSmart: document.getElementById("alertsOnSmart").checked
     };
 }
 
@@ -5032,6 +6603,36 @@ window.findTelegramChatId = async () => {
  * Items marked admin:true are only shown to admins.
  */
 const APP_RELEASES = [
+    {
+        id: "2026.10.42",
+        date: "25 Oct 2026",
+        title: "Tots, categories and smarter insights",
+        items: [
+            { icon: "fa-martini-glass", text: "Sell by the tot: products set up with tots per bottle can be sold as single tots in POS. Stock is taken off automatically." },
+            { icon: "fa-tags", text: "Products now have categories (beer, spirits and so on). Tap a category above the product list to filter." },
+
+            { icon: "fa-user-tie", admin: true, text: "New Manager role: a manager can restock, count stock and close days, but cannot see profit or cost figures and cannot delete records. Set it when adding or editing a staff member." },
+            { icon: "fa-fire", admin: true, text: "Insights now shows your busy times: sales by hour and by weekday, your peak window, and your busiest and quietest days." },
+            { icon: "fa-brain", admin: true, text: "Smart warnings: a list at the top of Insights, and phone alerts, for stock about to run out, sales running behind last week, and days that were never closed." },
+            { icon: "fa-layer-group", admin: true, text: "Profit by category in Insights, and a Categories button in Products to sort all your products into categories quickly." }
+        ]
+    },
+    {
+        id: "2026.10.38",
+        date: "25 Oct 2026",
+        title: "Works offline, customer tabs and stock counts",
+        items: [
+            { icon: "fa-wifi", text: "Works without internet: if the connection drops, sales are saved on this device and sent automatically when it is back. A badge at the top shows when you are offline." },
+            { icon: "fa-mobile-screen-button", text: "Install the app: when an Install button appears in the top bar, tap it to add Madollar to your home screen." },
+            { icon: "fa-book", text: "Customers can now buy on credit. Choose Credit at checkout for a registered customer, and record their payments from the Customers tab. Each customer has a statement you can download." },
+            { icon: "fa-clipboard-check", text: "Stock Take: in the Products tab, count the bottles on the shelf and submit the numbers." },
+
+            { icon: "fa-magnifying-glass-chart", admin: true, text: "Insights now shows profit per product: which products really earn money and which sell a lot for little profit." },
+            { icon: "fa-cart-flatbed", admin: true, text: "Requisition has a Suggest reorder button: it works out what to order from how fast each product sells and adds it to the list." },
+            { icon: "fa-scale-balanced", admin: true, text: "Stock take results: see what is short or over, with the value in KSh, and update stock to match the count in one tap." },
+            { icon: "fa-hand-holding-dollar", admin: true, text: "Close Day now includes cash received from customers paying off their tabs." }
+        ]
+    },
     {
         id: "2026.10.34",
         date: "24 Oct 2026",
