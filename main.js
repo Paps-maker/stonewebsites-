@@ -20,6 +20,7 @@
    SECTION 12G: SUPPLIERS & DELIVERIES, DEBT REMINDERS, BARCODE SCANNING
    SECTION 12H: TILL PRICE CHANGES & DISCOUNTS, REFUNDS AND THE AUDIT TRAIL
    SECTION 12I: WORK LOCATION (where staff may clock in from)
+   SECTION 12J: SUMMARY MESSAGES (daily, weekly, monthly, yearly)
    SECTION 13 : UI NAVIGATION & SCROLL HELPERS
    ========================================================================== */
 
@@ -462,6 +463,7 @@ function showDashboard() {
         setTimeout(() => window.showWhatsNewWhenReady(), 2200);
     }
     if (typeof window.startSmartWarningTimer === "function") window.startSmartWarningTimer();
+    if (typeof window.startSummaryTimer === "function") window.startSummaryTimer();
 }
 
 /**
@@ -3801,6 +3803,7 @@ window.db.collection("sales").orderBy("date", "desc").onSnapshot({ includeMetada
     });
 
     window.allSales = allSales;
+    window.salesLoaded = true;
     window.currentMonthlySalesTotal = monthlyTotal;
     window.monthlyProfitsCache = monthlyProfits;
 
@@ -8735,6 +8738,360 @@ window.renderWorkplaceNote = () => {
 window.onWorkplaceChanged = () => window.renderWorkplaceNote();
 
 /* ==========================================================================
+   SECTION 12J: SUMMARY MESSAGES (daily, weekly, monthly, yearly recaps sent to the admin's phone)
+   There is no server, so a summary goes out from the first logged-in device that finds one due.
+   A shared record (settings/summary_state) makes sure each one is sent once.
+   ========================================================================== */
+
+const SUMMARY_FREQS = [
+    { id: "daily", label: "Daily", noun: "day" },
+    { id: "weekly", label: "Weekly", noun: "week" },
+    { id: "monthly", label: "Monthly", noun: "month" },
+    { id: "yearly", label: "Yearly", noun: "year" }
+];
+const SUMMARY_PARTS = [
+    ["profit", "Profit"], ["top", "Top sellers"], ["payments", "Payment methods"],
+    ["leaks", "Discounts & refunds"], ["cash", "Cash short / over"], ["debts", "Money owed"], ["stock", "Stock levels"]
+];
+const SUMMARY_DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const SUMMARY_MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+const summaryDefaults = () => ({
+    daily: { on: false, hour: 8 },
+    weekly: { on: true, day: 1, hour: 8 },
+    monthly: { on: false, day: 1, hour: 8 },
+    yearly: { on: false, month: 1, day: 1, hour: 8 },
+    parts: { profit: true, top: true, payments: true, leaks: true, cash: true, debts: true, stock: true }
+});
+
+/** The saved summary settings, with anything missing filled from the defaults */
+function summaryConfig(alertCfg) {
+    const d = summaryDefaults();
+    const s = (alertCfg && alertCfg.summaries) || {};
+    const out = {};
+    SUMMARY_FREQS.forEach(f => { out[f.id] = Object.assign({}, d[f.id], s[f.id] || {}); });
+    out.parts = Object.assign({}, d.parts, s.parts || {});
+    return out;
+}
+
+const pad2 = (n) => String(n).padStart(2, "0");
+const hourLabel = (h) => `${h % 12 || 12}:00 ${h < 12 ? "AM" : "PM"}`;
+const dateKeyOf = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
+/** The most recent moment this summary was due (at or before `now`) */
+function summaryOccurrence(freq, fc, now) {
+    const hour = Math.min(23, Math.max(0, parseInt(fc.hour, 10) || 0));
+    const at = (y, m, d) => new Date(y, m, d, hour, 0, 0, 0);
+    let t;
+    if (freq === "daily") {
+        t = at(now.getFullYear(), now.getMonth(), now.getDate());
+        if (t > now) t.setDate(t.getDate() - 1);
+    } else if (freq === "weekly") {
+        t = at(now.getFullYear(), now.getMonth(), now.getDate());
+        t.setDate(t.getDate() - (((t.getDay() - (parseInt(fc.day, 10) || 0)) + 7) % 7));
+        if (t > now) t.setDate(t.getDate() - 7);
+    } else if (freq === "monthly") {
+        const day = Math.min(28, Math.max(1, parseInt(fc.day, 10) || 1));
+        t = at(now.getFullYear(), now.getMonth(), day);
+        if (t > now) t = at(now.getFullYear(), now.getMonth() - 1, day);
+    } else {
+        const month = Math.min(12, Math.max(1, parseInt(fc.month, 10) || 1)) - 1;
+        const day = Math.min(28, Math.max(1, parseInt(fc.day, 10) || 1));
+        t = at(now.getFullYear(), month, day);
+        if (t > now) t = at(now.getFullYear() - 1, month, day);
+    }
+    return t;
+}
+
+const summaryKey = (t) => `${dateKeyOf(t)}T${pad2(t.getHours())}`;
+
+/** The finished period a summary sent at `t` talks about, and the one before it (for "vs last time") */
+function summaryPeriod(freq, t) {
+    const sod = new Date(t.getFullYear(), t.getMonth(), t.getDate());
+    const day = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+    let start, end, prevStart, label;
+    const fmt = (d, o) => d.toLocaleDateString("en-GB", o).replace(/,/g, "");
+    if (freq === "daily") {
+        end = sod; start = day(sod, -1); prevStart = day(start, -1);
+        label = fmt(start, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+    } else if (freq === "weekly") {
+        end = sod; start = day(sod, -7); prevStart = day(start, -7);
+        label = `${fmt(start, { weekday: "short", day: "numeric", month: "short" })} - ${fmt(day(end, -1), { weekday: "short", day: "numeric", month: "short", year: "numeric" })}`;
+    } else if (freq === "monthly") {
+        end = new Date(sod.getFullYear(), sod.getMonth(), 1);
+        start = new Date(end.getFullYear(), end.getMonth() - 1, 1);
+        prevStart = new Date(start.getFullYear(), start.getMonth() - 1, 1);
+        label = fmt(start, { month: "long", year: "numeric" });
+    } else {
+        end = new Date(sod.getFullYear(), 0, 1);
+        start = new Date(end.getFullYear() - 1, 0, 1);
+        prevStart = new Date(start.getFullYear() - 1, 0, 1);
+        label = String(start.getFullYear());
+    }
+    return { start, end, prevStart, prevEnd: start, label };
+}
+
+const money0 = (n) => "KSh " + (Math.round((parseFloat(n) || 0) * 100) / 100).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+
+function periodTotals(start, end, costMap) {
+    let revenue = 0, cost = 0, count = 0;
+    (window.allSales || []).forEach(s => {
+        const d = s.date && s.date.toDate ? s.date.toDate() : null;
+        if (!d || d < start || d >= end) return;
+        revenue += parseFloat(s.total) || 0;
+        cost += saleCostOf(s, costMap);
+        count++;
+    });
+    return { revenue, cost, count };
+}
+
+/**
+ * Builds the text of one summary. `freq` is daily | weekly | monthly | yearly, `t` the moment it is due,
+ * `parts` which sections to include.
+ */
+function buildSummaryText(freq, t, parts) {
+    const f = SUMMARY_FREQS.find(x => x.id === freq);
+    const p = summaryPeriod(freq, t);
+    const costMap = buildCostMap();
+    const cur = periodTotals(p.start, p.end, costMap);
+    const prev = periodTotals(p.prevStart, p.prevEnd, costMap);
+    const lines = [`📊 *${f.label} summary*`, p.label, ""];
+
+    if (cur.count === 0) {
+        lines.push(`No sales were recorded this ${f.noun}.`);
+    } else {
+        const change = prev.revenue > 0 ? Math.round((cur.revenue - prev.revenue) / prev.revenue * 100) : null;
+        const vs = change === null ? "" : `  ${change >= 0 ? "▲" : "▼"} ${Math.abs(change)}% vs the ${f.noun} before`;
+        lines.push(`💰 Sales: ${money0(cur.revenue)} (${cur.count} sale${cur.count === 1 ? "" : "s"})${vs}`);
+        if (parts.profit) {
+            const profit = cur.revenue - cur.cost;
+            lines.push(`📈 Profit: ${money0(profit)} (${cur.revenue > 0 ? Math.round(profit / cur.revenue * 100) : 0}% margin)`);
+        }
+    }
+
+    const inPeriod = (window.allSales || []).filter(s => { const d = s.date && s.date.toDate ? s.date.toDate() : null; return d && d >= p.start && d < p.end; });
+
+    if (parts.top && inPeriod.length) {
+        const by = {};
+        inPeriod.forEach(s => (s.items || []).forEach(i => {
+            const k = itemLabel(i);
+            if (!by[k]) by[k] = { qty: 0, rev: 0 };
+            by[k].qty += parseFloat(i.qty) || 0;
+            by[k].rev += (parseFloat(i.price) || 0) * (parseFloat(i.qty) || 0);
+        }));
+        const top = Object.entries(by).sort((a, b) => b[1].rev - a[1].rev).slice(0, 3);
+        if (top.length) {
+            lines.push("", "🏆 *Top sellers*");
+            top.forEach(([name, v], i) => lines.push(`${i + 1}. ${name}: ${window.toMixedFraction(v.qty)} sold, ${money0(v.rev)}`));
+        }
+    }
+
+    if (parts.payments && inPeriod.length) {
+        const buckets = {};
+        const names = { cash: "Cash", mpesa: "M-PESA", card: "Card", bank: "Bank", credit: "On credit", other: "Other" };
+        inPeriod.forEach(s => { const b = paymentBucket(s.payment); buckets[b] = (buckets[b] || 0) + (parseFloat(s.total) || 0); });
+        lines.push("", "💳 " + Object.entries(buckets).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${names[k]} ${money0(v)}`).join(" · "));
+    }
+
+    if (parts.leaks) {
+        let given = 0;
+        inPeriod.forEach(s => (s.items || []).forEach(i => {
+            if (i.listPrice !== undefined) given += Math.max(0, (parseFloat(i.listPrice) || 0) - (parseFloat(i.price) || 0)) * (parseFloat(i.qty) || 0);
+        }));
+        let refunded = 0, refundCount = 0;
+        (window.refundsList || []).forEach(r => {
+            const d = r.date && r.date.toDate ? r.date.toDate() : (r.date instanceof Date ? r.date : null);
+            if (d && d >= p.start && d < p.end) { refunded += parseFloat(r.amount) || 0; refundCount++; }
+        });
+        if (given > 0 || refunded > 0) {
+            lines.push("", `🏷️ Discounts and price cuts: ${money0(given)}`, `↩️ Refunds: ${money0(refunded)} (${refundCount})`);
+        }
+    }
+
+    if (parts.cash) {
+        const sk = dateKeyOf(p.start), ek = dateKeyOf(p.end);
+        const closings = Object.values(window.dayClosings || {}).filter(c => c.dateKey >= sk && c.dateKey < ek);
+        const diff = closings.reduce((n, c) => n + (parseFloat(c.difference) || 0), 0);
+        const salesDays = new Set(inPeriod.map(s => dateKeyOf(s.date.toDate())));
+        const closedDays = new Set(closings.map(c => c.dateKey));
+        const notClosed = [...salesDays].filter(d => !closedDays.has(d)).length;
+        if (closings.length || notClosed) {
+            const tail = closings.length ? (diff === 0 ? "balanced" : diff < 0 ? `SHORT ${money0(-diff)}` : `OVER ${money0(diff)}`) : "";
+            lines.push("", `📒 Cash: ${closings.length} day${closings.length === 1 ? "" : "s"} closed${tail ? ", " + tail : ""}${notClosed ? ` · ${notClosed} day${notClosed === 1 ? "" : "s"} not closed` : ""}`);
+        }
+    }
+
+    if (parts.debts) {
+        const owed = Object.values(window.customersCache || {}).reduce((n, c) => n + Math.max(0, parseFloat(c.balance) || 0), 0);
+        const owe = Object.values(window.suppliersCache || {}).reduce((n, s) => n + Math.max(0, parseFloat(s.balance) || 0), 0);
+        if (owed > 0 || owe > 0) lines.push("", `🧾 Customers owe you ${money0(owed)} · you owe suppliers ${money0(owe)} (right now)`);
+    }
+
+    if (parts.stock) {
+        let low = 0, out = 0;
+        (window.productsCache || []).forEach(d => {
+            const x = d.data();
+            const stock = parseFloat(x.stock) || 0;
+            if (stock <= 0) out++; else if (stock <= (parseFloat(x.min) || 0)) low++;
+        });
+        if (low || out) lines.push("", `📦 Stock now: ${out} out of stock, ${low} running low`);
+    }
+
+    return lines.join("\n");
+}
+
+/* ---------------------------------------------------------------- the sender */
+window.runSummaries = async () => {
+    const c = window.alertConfig || {};
+    if (activeChannels(c).length === 0 || !navigator.onLine) return;
+    if (!window.salesLoaded || !(window.productsCache || []).length) return;     // data not loaded yet
+
+    const cfg = summaryConfig(c);
+    const now = new Date();
+    for (const f of SUMMARY_FREQS) {
+        const fc = cfg[f.id];
+        if (!fc.on) continue;
+        const t = summaryOccurrence(f.id, fc, now);
+        const key = summaryKey(t);
+        let send = false;
+        try {
+            const ref = window.db.collection("settings").doc("summary_state");
+            send = await window.db.runTransaction(async (tx) => {
+                const snap = await tx.get(ref);
+                const sent = (snap.exists && snap.data().sent) || {};
+                if (sent[f.id] === key) return false;
+                tx.set(ref, { sent: Object.assign({}, sent, { [f.id]: key }), updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+                return sent[f.id] !== undefined;        // the first time it is seen it is only noted, so switching it on never sends an old one
+            });
+        } catch (err) {
+            try {
+                const seen = JSON.parse(localStorage.getItem("madollar_summary_sent") || "{}");
+                if (seen[f.id] !== key) { send = seen[f.id] !== undefined; seen[f.id] = key; localStorage.setItem("madollar_summary_sent", JSON.stringify(seen)); }
+            } catch (e) { send = false; }
+        }
+        if (send) window.sendAlert(buildSummaryText(f.id, t, cfg.parts), "onSummary");
+    }
+};
+
+window.startSummaryTimer = () => {
+    if (window.summaryTimerStarted) return;
+    window.summaryTimerStarted = true;
+    setTimeout(() => window.runSummaries(), 45000);
+    setInterval(() => window.runSummaries(), 30 * 60 * 1000);
+};
+
+/* ---------------------------------------------------------------- the settings (inside the Alerts window) */
+function fillSummaryForm(cfg) {
+    const opts = (items, selected) => items.map(([v, l]) => `<option value="${v}" ${String(v) === String(selected) ? "selected" : ""}>${l}</option>`).join("");
+    const hours = Array.from({ length: 24 }, (_, h) => [h, hourLabel(h)]);
+    const days = Array.from({ length: 28 }, (_, i) => [i + 1, String(i + 1)]);
+    const set = (id, html) => { const e = document.getElementById(id); if (e) e.innerHTML = html; };
+    const check = (id, v) => { const e = document.getElementById(id); if (e) e.checked = !!v; };
+
+    set("sumDailyHour", opts(hours, cfg.daily.hour));
+    set("sumWeeklyDay", opts(SUMMARY_DAYS.map((n, i) => [i, n]), cfg.weekly.day));
+    set("sumWeeklyHour", opts(hours, cfg.weekly.hour));
+    set("sumMonthlyDay", opts(days, cfg.monthly.day));
+    set("sumMonthlyHour", opts(hours, cfg.monthly.hour));
+    set("sumYearlyMonth", opts(SUMMARY_MONTHS.map((n, i) => [i + 1, n]), cfg.yearly.month));
+    set("sumYearlyDay", opts(days, cfg.yearly.day));
+    set("sumYearlyHour", opts(hours, cfg.yearly.hour));
+    check("sumDailyOn", cfg.daily.on); check("sumWeeklyOn", cfg.weekly.on); check("sumMonthlyOn", cfg.monthly.on); check("sumYearlyOn", cfg.yearly.on);
+    SUMMARY_PARTS.forEach(([k]) => check("sumPart_" + k, cfg.parts[k]));
+}
+
+function readSummaryForm() {
+    const val = (id) => parseInt((document.getElementById(id) || {}).value, 10);
+    const on = (id) => !!(document.getElementById(id) || {}).checked;
+    const parts = {};
+    SUMMARY_PARTS.forEach(([k]) => { parts[k] = on("sumPart_" + k); });
+    return {
+        daily: { on: on("sumDailyOn"), hour: val("sumDailyHour") },
+        weekly: { on: on("sumWeeklyOn"), day: val("sumWeeklyDay"), hour: val("sumWeeklyHour") },
+        monthly: { on: on("sumMonthlyOn"), day: val("sumMonthlyDay"), hour: val("sumMonthlyHour") },
+        yearly: { on: on("sumYearlyOn"), month: val("sumYearlyMonth"), day: val("sumYearlyDay"), hour: val("sumYearlyHour") },
+        parts
+    };
+}
+
+/** Which summaries were just switched on or rescheduled (so an old one is not sent straight away) */
+function summaryChanges(before, after) {
+    return SUMMARY_FREQS.map(f => f.id).filter(id => after[id].on && JSON.stringify(after[id]) !== JSON.stringify(before[id]));
+}
+
+async function resetSummaryState(ids) {
+    if (!ids.length) return;
+    const del = {};
+    ids.forEach(id => { del[id] = firebase.firestore.FieldValue.delete(); });
+    try { await window.db.collection("settings").doc("summary_state").set({ sent: del }, { merge: true }); } catch (e) { console.warn("Summary state not reset:", e && e.message); }
+    try {
+        const seen = JSON.parse(localStorage.getItem("madollar_summary_sent") || "{}");
+        ids.forEach(id => delete seen[id]);
+        localStorage.setItem("madollar_summary_sent", JSON.stringify(seen));
+    } catch (e) { /* no local copy */ }
+}
+
+/** "Send a sample now": builds the latest finished summary of the chosen kind and sends it to the ticked places */
+window.sendSummarySample = async () => {
+    const status = document.getElementById("alertsStatus");
+    status.style.whiteSpace = "pre-line";
+    const f = readAlertForm();
+    const problems = alertFormProblems(f);
+    if (problems.length) { status.className = "small mt-2 text-warning"; status.textContent = problems.join("\n"); return; }
+    if (!window.salesLoaded) { status.className = "small mt-2 text-warning"; status.textContent = "Sales are still loading. Try again in a moment."; return; }
+
+    const freq = document.getElementById("sumSampleFreq").value;
+    const fc = f.summaries[freq];
+    const text = buildSummaryText(freq, summaryOccurrence(freq, fc, new Date()), f.summaries.parts);
+    status.className = "small mt-2 text-muted";
+    status.textContent = "Sending...";
+    const channels = [];
+    if (f.useTelegram) channels.push(["telegram", "Telegram"]);
+    if (f.useWhatsApp) channels.push(["whatsapp", "WhatsApp"]);
+    if (f.useEmail) channels.push(["email", "Email"]);
+    const results = await Promise.all(channels.map(([ch]) => sendOnChannel(ch, f, text)));
+    const lines = results.map((r, i) => r.ok ? `✓ ${channels[i][1]}: sent` : `✗ ${channels[i][1]}: ${r.error}`);
+    status.className = "small mt-2 " + (results.every(r => r.ok) ? "text-success" : "text-danger");
+    status.textContent = lines.join("\n") + "\n\n" + text;
+};
+
+/* ---------------------------------------------------------------- tab bar: keep the neighbours of the open tab in view */
+(function setupTabScroller() {
+    const wrap = document.getElementById("tabsWrap");
+    const sc = document.getElementById("tabsScroll");
+    const list = document.getElementById("mainTabs");
+    if (!wrap || !sc || !list) return;
+
+    const update = () => {
+        wrap.classList.toggle("can-left", sc.scrollLeft > 4);
+        wrap.classList.toggle("can-right", sc.scrollLeft + sc.clientWidth < sc.scrollWidth - 4);
+    };
+
+    // Slide the chosen tab to the middle, so the tabs before and after it show
+    const center = (btn) => {
+        if (!btn || !btn.getBoundingClientRect) return;
+        const r = btn.getBoundingClientRect();
+        const s = sc.getBoundingClientRect();
+        const delta = (r.left + r.width / 2) - (s.left + s.width / 2);
+        if (Math.abs(delta) > 2) sc.scrollBy({ left: delta, behavior: "smooth" });
+    };
+
+    window.scrollTabs = (dir) => sc.scrollBy({ left: dir * Math.max(120, sc.clientWidth * 0.6), behavior: "smooth" });
+
+    sc.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    list.addEventListener("click", (e) => { const b = e.target && e.target.closest ? e.target.closest(".nav-link") : null; if (b) center(b); });
+    document.addEventListener("shown.bs.tab", (e) => {
+        const b = e.target && e.target.closest ? e.target.closest("#mainTabs .nav-link") : null;
+        if (b) center(b);
+    });
+    // Tabs appear and disappear with permissions, so re-check when that happens
+    if (typeof MutationObserver === "function") new MutationObserver(update).observe(list, { subtree: true, attributes: true, attributeFilter: ["class"] });
+    setTimeout(() => { update(); center(list.querySelector(".nav-link.active")); }, 400);
+    update();
+})();
+
+/* ==========================================================================
    SECTION 13: UI NAVIGATION & SCROLL HELPERS
    ========================================================================== */
 
@@ -8931,6 +9288,7 @@ window.openAlertsModal = () => {
     document.getElementById("alertsOnDelivery").checked = c.onDelivery !== false;
     document.getElementById("alertsOnAudit").checked = c.onAudit !== false;
     document.getElementById("alertsStatus").textContent = "";
+    fillSummaryForm(summaryConfig(c));
     window.toggleAlertChannel();
     bootstrap.Modal.getOrCreateInstance(document.getElementById("alertsModal")).show();
 };
@@ -8953,7 +9311,8 @@ function readAlertForm() {
         onStockTake: document.getElementById("alertsOnStockTake").checked,
         onSmart: document.getElementById("alertsOnSmart").checked,
         onDelivery: document.getElementById("alertsOnDelivery").checked,
-        onAudit: document.getElementById("alertsOnAudit").checked
+        onAudit: document.getElementById("alertsOnAudit").checked,
+        summaries: readSummaryForm()
     };
 }
 
@@ -8979,10 +9338,12 @@ window.saveAlertSettings = async () => {
     }
 
     try {
+        const changedSummaries = summaryChanges(summaryConfig(window.alertConfig), summaryConfig(f));
         await window.db.collection("settings").doc("alerts").set({
             ...f,
             updatedAt: firebase.firestore.FieldValue.serverTimestamp()
         });
+        await resetSummaryState(changedSummaries);
         hideModalById("alertsModal");
         Swal.fire({ icon: "success", title: f.enabled ? "Alerts are on" : "Alerts are off", timer: 1500, showConfirmButton: false });
     } catch (err) {
@@ -9061,6 +9422,15 @@ window.findTelegramChatId = async () => {
  * Items marked admin:true are only shown to admins.
  */
 const APP_RELEASES = [
+    {
+        id: "2026.10.90",
+        date: "25 Oct 2026",
+        title: "Summary messages to your phone",
+        items: [
+            { icon: "fa-chart-simple", admin: true, text: "Get a recap of sales, profit, top sellers, payments, discounts, refunds, cash and stock sent to your phone: daily, weekly, monthly or yearly. Choose which ones, the day and the time in the Alerts window. Weekly on Monday morning is switched on to start with." },
+            { icon: "fa-paper-plane", admin: true, text: "Press Send a sample in the Alerts window to see exactly what a summary looks like." }
+        ]
+    },
     {
         id: "2026.10.85",
         date: "25 Oct 2026",

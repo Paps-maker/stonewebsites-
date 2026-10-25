@@ -237,7 +237,18 @@
   /* ==========================================================================
      TABS
      ========================================================================== */
-  .tabs-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; margin-bottom: 18px; }
+  .tabs-wrap { position: relative; margin-bottom: 18px; }
+  .tabs-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; scroll-behavior: smooth; }
+  /* soft fades and arrows show when more tabs are hidden to the left or right */
+  .tabs-wrap::before, .tabs-wrap::after { content: ""; position: absolute; top: 1px; bottom: 1px; width: 46px; z-index: 2; pointer-events: none; opacity: 0; transition: opacity .2s; border-radius: 14px; }
+  .tabs-wrap::before { left: 1px; background: linear-gradient(90deg, var(--surface) 35%, transparent); }
+  .tabs-wrap::after { right: 1px; background: linear-gradient(270deg, var(--surface) 35%, transparent); }
+  .tabs-wrap.can-left::before, .tabs-wrap.can-right::after { opacity: 1; }
+  .tabs-arrow { position: absolute; top: 50%; transform: translateY(-50%); z-index: 3; width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); display: none; align-items: center; justify-content: center; font-size: .72rem; box-shadow: var(--shadow-sm); padding: 0; }
+  .tabs-arrow:hover { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
+  .tabs-arrow.left { left: 6px; }
+  .tabs-arrow.right { right: 6px; }
+  .tabs-wrap.can-left .tabs-arrow.left, .tabs-wrap.can-right .tabs-arrow.right { display: flex; }
   .tabs-scroll::-webkit-scrollbar { display: none; }
   .nav-tabs {
     border: 0; gap: 6px; flex-wrap: nowrap; background: var(--surface); padding: 6px;
@@ -529,6 +540,15 @@
   @media (max-width: 575.98px) {
     #priceModal .modal-footer > .me-auto, #discountModal .modal-footer > .me-auto { width: 100%; margin-right: 0 !important; }
   }
+  .sum-rows { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .sum-row { display: grid; grid-template-columns: 120px 1fr; gap: 8px 12px; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  .sum-row:last-child { border-bottom: 0; }
+  .sum-on { display: flex; gap: 8px; align-items: center; margin: 0; cursor: pointer; }
+  .sum-when { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; font-size: .84rem; color: var(--muted); }
+  .sum-when .form-select { width: auto; min-width: 84px; }
+  .sum-parts { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: .86rem; }
+  .sum-parts label { display: flex; gap: 6px; align-items: center; margin: 0; cursor: pointer; }
+  @media (max-width: 575.98px) { .sum-row { grid-template-columns: 1fr; } }
   .wp-list { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
   .wp-row { display: grid; grid-template-columns: 1fr 150px auto; gap: 10px 14px; align-items: center; padding: 12px; border-bottom: 1px solid var(--line); }
   .wp-row:last-child { border-bottom: 0; }
@@ -1136,7 +1156,9 @@
     </div>
 
     <!-- Tabs -->
-    <div class="tabs-scroll">
+    <div class="tabs-wrap" id="tabsWrap">
+    <button class="tabs-arrow left" type="button" aria-label="Show earlier tabs" onclick="window.scrollTabs(-1)"><i class="fas fa-chevron-left"></i></button>
+    <div class="tabs-scroll" id="tabsScroll">
       <ul class="nav nav-tabs" id="mainTabs" role="tablist">
         <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#productsTab"><i class="fas fa-boxes-stacked"></i>Products</button></li>
         <li class="nav-item d-none" data-perm="customers.view"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#customersTab"><i class="fas fa-address-book"></i>Customers</button></li>
@@ -1150,6 +1172,8 @@
         <li class="nav-item d-none" data-perm="audit.view"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#auditTab"><i class="fas fa-shield-halved"></i>Audit</button></li>
         <li class="nav-item d-none" data-perm="staff.manage"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#staffManagementTab"><i class="fas fa-users-gear"></i>Staff</button></li>
       </ul>
+    </div>
+    <button class="tabs-arrow right" type="button" aria-label="Show more tabs" onclick="window.scrollTabs(1)"><i class="fas fa-chevron-right"></i></button>
     </div>
 
     <div class="tab-content">
@@ -2204,6 +2228,48 @@
           <label class="al-opt"><input class="form-check-input" type="checkbox" id="alertsOnSmart"><span><b>Smart warnings</b><small>Stock about to run out, sales running behind last week, or a day that was never closed</small></span></label>
         </div>
 
+        <hr class="my-3">
+        <div class="fw-semibold mb-1"><i class="fas fa-chart-simple me-2"></i>Summary messages</div>
+        <div class="small text-muted mb-2">A recap sent to the places ticked above. Each one covers the last <b>finished</b> day, week, month or year, and compares it with the one before.</div>
+
+        <div class="sum-rows">
+          <div class="sum-row">
+            <label class="sum-on"><input class="form-check-input" type="checkbox" id="sumDailyOn"><b>Daily</b></label>
+            <div class="sum-when"><span>every day at</span><select id="sumDailyHour" class="form-select form-select-sm"></select></div>
+          </div>
+          <div class="sum-row">
+            <label class="sum-on"><input class="form-check-input" type="checkbox" id="sumWeeklyOn"><b>Weekly</b></label>
+            <div class="sum-when"><span>every</span><select id="sumWeeklyDay" class="form-select form-select-sm"></select><span>at</span><select id="sumWeeklyHour" class="form-select form-select-sm"></select></div>
+          </div>
+          <div class="sum-row">
+            <label class="sum-on"><input class="form-check-input" type="checkbox" id="sumMonthlyOn"><b>Monthly</b></label>
+            <div class="sum-when"><span>on day</span><select id="sumMonthlyDay" class="form-select form-select-sm"></select><span>at</span><select id="sumMonthlyHour" class="form-select form-select-sm"></select></div>
+          </div>
+          <div class="sum-row">
+            <label class="sum-on"><input class="form-check-input" type="checkbox" id="sumYearlyOn"><b>Yearly</b></label>
+            <div class="sum-when"><span>every</span><select id="sumYearlyMonth" class="form-select form-select-sm"></select><select id="sumYearlyDay" class="form-select form-select-sm"></select><span>at</span><select id="sumYearlyHour" class="form-select form-select-sm"></select></div>
+          </div>
+        </div>
+
+        <div class="small fw-semibold mt-3 mb-1">Include</div>
+        <div class="sum-parts">
+          <label><input class="form-check-input" type="checkbox" id="sumPart_profit"> Profit</label>
+          <label><input class="form-check-input" type="checkbox" id="sumPart_top"> Top sellers</label>
+          <label><input class="form-check-input" type="checkbox" id="sumPart_payments"> Payment methods</label>
+          <label><input class="form-check-input" type="checkbox" id="sumPart_leaks"> Discounts &amp; refunds</label>
+          <label><input class="form-check-input" type="checkbox" id="sumPart_cash"> Cash short / over</label>
+          <label><input class="form-check-input" type="checkbox" id="sumPart_debts"> Money owed</label>
+          <label><input class="form-check-input" type="checkbox" id="sumPart_stock"> Stock levels</label>
+        </div>
+
+        <div class="d-flex gap-2 flex-wrap align-items-center mt-3">
+          <select id="sumSampleFreq" class="form-select form-select-sm" style="width:auto">
+            <option value="daily">Daily</option><option value="weekly" selected>Weekly</option><option value="monthly">Monthly</option><option value="yearly">Yearly</option>
+          </select>
+          <button type="button" class="btn btn-soft btn-sm" onclick="window.sendSummarySample()"><i class="fas fa-paper-plane me-1"></i>Send a sample now</button>
+        </div>
+        <div class="small text-muted mt-2"><i class="fas fa-circle-info me-1"></i>Summaries are sent by the first phone or computer that is logged in after the set time, so keep the app open or logged in on at least one device. If it was closed at the time, the summary goes out as soon as someone logs in.</div>
+
         <div class="small text-muted mt-3"><i class="fas fa-circle-info me-1"></i>Alerts are sent from the phone that makes the sale, so they need an internet connection at that moment. Each alert goes to every place you ticked.</div>
         <div id="alertsStatus" class="small mt-2"></div>
       </div>
@@ -3095,7 +3161,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
 
-<script src="main.js?v=20261077"></script>
+<script src="main.js?v=20261095"></script>
 <script>
   // If a stale cached main.js was loaded (new buttons need its functions), reload once bypassing the cache
   if (typeof window.openAddProductModal !== 'function') {
