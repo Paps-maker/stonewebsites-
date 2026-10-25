@@ -1,0 +1,31 @@
+{
+  "name": "Madollar Liquor Pub",
+  "short_name": "Madollar",
+  "description": "Inventory and sales system for Madollar Liquor Pub",
+  "start_url": "./liquor.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#1c1c1c",
+  "theme_color": "#2b1d0e",
+  "icons": [
+    {
+      "src": "img/liquor-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "img/liquor-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "img/liquor-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
