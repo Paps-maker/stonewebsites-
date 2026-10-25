@@ -425,6 +425,34 @@
   .table-compact tbody tr > td:first-child { background-color: var(--surface) !important; background-image: none; box-shadow: 1px 0 0 var(--line); }
   .table-compact tbody tr.table-danger > td:first-child { background-image: linear-gradient(var(--danger-bg), var(--danger-bg)) !important; }
 
+  /* Roles & permissions */
+  .perm-note { font-size: .8rem; color: var(--muted); background: var(--surface-2); border: 1px dashed var(--line); border-radius: 10px; padding: 8px 12px; }
+  .perm-note i { color: #f59e0b; }
+  .perm-roletabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+  .perm-roletab { border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); border-radius: 12px; padding: 10px 14px; text-align: left; display: flex; flex-direction: column; gap: 2px; transition: all .15s; }
+  .perm-roletab small { color: var(--muted); font-size: .74rem; }
+  .perm-roletab-name { font-weight: 700; }
+  .perm-roletab.active { border-color: var(--brand); background: var(--brand-soft); }
+  .sales-subtabs .subtab-count { background: var(--surface-2); border-radius: 999px; padding: 0 8px; font-size: .7rem; margin-left: 8px; color: var(--ink-2); }
+  .sales-subtabs .subtab.active .subtab-count { background: rgba(0, 0, 0, .2); color: inherit; }
+  .perm-actions .btn { white-space: nowrap; }
+
+  .perm-groupbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 2px; border-bottom: 1px solid var(--line); }
+  .perm-groupbar-title { font-weight: 700; color: var(--brand); }
+  .perm-item { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 13px 2px; border-bottom: 1px dashed var(--line); cursor: pointer; margin: 0; }
+  .perm-item:last-child { border-bottom: 0; }
+  .perm-item-text { min-width: 0; }
+  .perm-label { display: block; font-weight: 600; font-size: .9rem; }
+  .perm-hint { display: block; font-size: .76rem; color: var(--muted); margin-top: 1px; }
+  .perm-risk { color: #f59e0b; font-size: .72rem; margin-left: 4px; }
+  .perm-grouptag { font-size: .62rem; text-transform: uppercase; letter-spacing: .05em; background: var(--brand-soft); color: var(--brand); border-radius: 999px; padding: 1px 7px; margin-left: 6px; vertical-align: middle; font-weight: 700; }
+  .perm-item .form-check-input { width: 2.7em; height: 1.45em; cursor: pointer; flex-shrink: 0; }
+  .perm-item .form-check-input:checked { background-color: var(--brand); border-color: var(--brand); }
+  .perm-found { font-size: .8rem; color: var(--muted); padding: 6px 2px 4px; }
+  .perm-mini { border: 1px solid var(--line); background: var(--surface); color: var(--muted); border-radius: 8px; font-size: .72rem; padding: 3px 10px; margin-left: 4px; font-weight: 600; }
+  .perm-mini:hover { color: var(--brand); border-color: var(--brand); }
+
+
   /* Tots, busy times, smart warnings */
   .tot-tag { font-size: .62rem; text-transform: uppercase; letter-spacing: .05em; font-weight: 700; background: var(--brand-soft); color: var(--brand); border-radius: 999px; padding: 1px 7px; margin-left: 4px; vertical-align: middle; }
   .tot-box { border: 1px dashed var(--line); border-radius: 12px; padding: 12px 14px; background: var(--surface-2); }
@@ -437,6 +465,12 @@
   .busy-chip small { display: block; color: var(--muted); font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; }
   .busy-chip b { font-size: .95rem; }
   .busy-chip em { font-style: normal; font-size: .76rem; color: var(--muted); }
+  /* A card lays its children out in a column, which would stretch a lone button across the card */
+  .card > .btn:not(.w-100) { align-self: flex-start; }
+
+  /* Action button groups (page headers). On a laptop they are a simple row. */
+  .action-row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+
   /* Smart warnings panel */
   .sw-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
   .sw-head-ico { width: 42px; height: 42px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; background: var(--brand-soft); color: var(--brand); font-size: 1.05rem; flex-shrink: 0; }
@@ -699,25 +733,40 @@
     .brand img { height: 44px; max-width: 110px; }
     .brand-name { font-size: .88rem; }
     .brand-sub { display: none; }
-    .topbar-actions { width: 100%; justify-content: space-between; gap: 6px; }
+    /* Row 1: Low stock + the icon buttons.  Row 2: role badge on the left, logout on the right. */
+    .topbar-actions { width: 100%; justify-content: space-between; align-items: center; gap: 6px; }
     .topbar-actions .btn-label { display: none; }
-    #lowStockWrapper { padding: .38rem .6rem; }
+    .offline-badge { order: 0; flex: 1 1 100%; justify-content: center; }
+    #lowStockWrapper { order: 1; flex: 0 0 auto; padding: .38rem .65rem; gap: 6px; }
+    .topbar .btn-top, .topbar .theme-toggle { order: 2; flex: 0 0 auto; width: 44px; height: 42px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+    .topbar-actions::after { content: ""; order: 3; flex: 0 0 100%; height: 0; }   /* line break before row 2 */
+    #roleBadge { order: 4; display: inline-flex; align-items: center; justify-content: center; padding: .45em 1em; font-size: .7rem; }
+    #logoutBtn { order: 5; margin-left: auto; }
 
     .stat-card { padding: 14px; }
     .stat-value { font-size: 1.2rem; }
     .stat-icon { width: 34px; height: 34px; font-size: .85rem; border-radius: 10px; }
     .panel { padding: 14px; }
 
-    .section-head { align-items: stretch; }
-    .section-head > .btn, .section-head > div > .btn { width: 100%; }
-    .section-head .d-flex { width: 100%; }
-    .section-head .d-flex > .btn { flex: 1 1 auto; }
+    .section-head { flex-direction: column; align-items: flex-start; }
+    /* Buttons keep their normal size on phones (no stretching across the screen) */
+    .section-head > .btn { width: auto; align-self: flex-start; }
+
+    /* Groups of action buttons wrap naturally, main action first */
+    .action-row { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; align-items: center; }
+    .action-row > .btn { width: auto; flex: 0 0 auto; margin: 0 !important; padding: .4rem .9rem; font-size: .86rem; white-space: nowrap; }
+    .action-row > .ar-primary { order: -1; }
+    .action-row > .form-control { flex: 1 1 calc(50% - 8px); width: auto !important; min-width: 130px; margin: 0 !important; }
+    .action-row > .form-select { flex: 0 1 auto; width: auto !important; min-width: 170px; margin: 0 !important; }
+    .modal-header { flex-wrap: wrap; gap: 8px; }
+    .modal-header > .d-flex { flex-wrap: wrap; }
 
     .modal-dialog { margin: 10px; }
     .modal-body { padding: 16px; }
     .modal-header, .modal-footer { padding: 12px 16px; }
-    .modal-footer > .btn, .modal-footer > .d-flex { flex: 1 1 auto; }
-    .modal-footer > .d-flex > .btn { flex: 1 1 auto; }
+    .modal-footer .btn { padding: .4rem .85rem; font-size: .86rem; }
+
+    .modal-footer > .d-flex { margin-left: auto; }
 
     .profit-card { padding: 16px; }
     .profit-card h3 { font-size: 1.4rem; }
@@ -756,6 +805,14 @@
     .login-card { padding: 24px 18px; border-radius: 16px; }
     .stat-label { font-size: .68rem; }
     .nav-tabs .nav-link { padding: .5rem .75rem; font-size: .82rem; }
+  }
+
+  /* Small phones: tighter top bar so the icons stay on one row */
+  @media (max-width: 380px) {
+    .topbar-actions { gap: 5px; }
+    #lowStockWrapper { padding: .35rem .5rem; font-size: .76rem; gap: 5px; }
+    #lowStockWrapper > i { display: none; }
+    .topbar .btn-top, .topbar .theme-toggle { width: 38px; height: 40px; }
   }
 
   @media (hover: none) {
@@ -835,7 +892,7 @@
             <span>Low stock</span>
             <span id="lowStockBadge">0</span>
           </div>
-          <button class="btn btn-top admin-only d-none" onclick="window.openAlertsModal()" title="Phone alerts">
+          <button class="btn btn-top d-none" data-perm="alerts.manage" onclick="window.openAlertsModal()" title="Phone alerts">
             <i class="fas fa-paper-plane"></i><span class="btn-label ms-1">Alerts</span>
           </button>
           <button class="btn btn-top" onclick="window.openNotificationsModal()" title="View Notifications">
@@ -877,7 +934,7 @@
               </div>
             </div>
           </div>
-          <div class="admin-only d-none stat-divider d-flex justify-content-between align-items-center">
+          <div class="d-none stat-divider d-flex justify-content-between align-items-center" data-perm="view.monthlySales">
             <span class="small text-muted fw-semibold">Monthly Sales</span>
             <strong id="monthlySales" class="fs-6">KSh 0</strong>
           </div>
@@ -899,7 +956,7 @@
         </div>
       </div>
 
-      <div class="col-12 col-lg-6 admin-only d-none">
+      <div class="col-12 col-lg-6 d-none" data-perm="view.stockValue">
         <div class="card stat-card">
           <div class="d-flex align-items-center gap-2 mb-3">
             <span class="stat-icon ic-rose"><i class="fas fa-vault"></i></span>
@@ -918,14 +975,14 @@
         </div>
       </div>
 
-      <div class="col-12 col-lg-6 admin-only d-none">
+      <div class="col-12 col-lg-6 d-none" data-perm="view.target">
         <div class="card stat-card">
           <div class="d-flex justify-content-between align-items-center mb-3">
             <div class="d-flex align-items-center gap-2">
               <span class="stat-icon ic-blue"><i class="fas fa-bullseye"></i></span>
               <div class="stat-label">Monthly Target</div>
             </div>
-            <button class="btn btn-soft btn-sm" onclick="window.openTargetModal()"><i class="fas fa-sliders me-1"></i>Set Target</button>
+            <button class="btn btn-soft btn-sm d-none" data-perm="target.set" onclick="window.openTargetModal()"><i class="fas fa-sliders me-1"></i>Set Target</button>
           </div>
           <div class="progress">
             <div id="salesProgressBar" class="progress-bar bg-success" role="progressbar" style="width: 0%;">0%</div>
@@ -939,14 +996,14 @@
     <div class="tabs-scroll">
       <ul class="nav nav-tabs" id="mainTabs" role="tablist">
         <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#productsTab"><i class="fas fa-boxes-stacked"></i>Products</button></li>
-        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#customersTab"><i class="fas fa-address-book"></i>Customers</button></li>
-        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#posTab"><i class="fas fa-cash-register"></i>POS</button></li>
-        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#salesTab"><i class="fas fa-chart-line"></i>Sales</button></li>
-        <li class="nav-item admin-only d-none"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#insightsTab"><i class="fas fa-chart-pie"></i>Insights</button></li>
-        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#attendanceTab"><i class="fas fa-user-clock"></i>Clock In &amp; Out</button></li>
-        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#inflowLogsTab"><i class="fas fa-truck-ramp-box"></i>Restock Logs</button></li>
-        <li class="nav-item admin-only d-none"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#requisitionTab"><i class="fas fa-clipboard-list"></i>Requisition</button></li>
-        <li class="nav-item admin-only d-none"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#staffManagementTab"><i class="fas fa-users-gear"></i>Staff</button></li>
+        <li class="nav-item d-none" data-perm="customers.view"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#customersTab"><i class="fas fa-address-book"></i>Customers</button></li>
+        <li class="nav-item d-none" data-perm="pos.sell"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#posTab"><i class="fas fa-cash-register"></i>POS</button></li>
+        <li class="nav-item d-none" data-perm="sales.view"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#salesTab"><i class="fas fa-chart-line"></i>Sales</button></li>
+        <li class="nav-item d-none" data-perm="view.insights"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#insightsTab"><i class="fas fa-chart-pie"></i>Insights</button></li>
+        <li class="nav-item d-none" data-perm="attendance.clock"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#attendanceTab"><i class="fas fa-user-clock"></i>Clock In &amp; Out</button></li>
+        <li class="nav-item d-none" data-perm="view.restockLogs"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#inflowLogsTab"><i class="fas fa-truck-ramp-box"></i>Restock Logs</button></li>
+        <li class="nav-item d-none" data-perm="requisition.use"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#requisitionTab"><i class="fas fa-clipboard-list"></i>Requisition</button></li>
+        <li class="nav-item d-none" data-perm="staff.manage"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#staffManagementTab"><i class="fas fa-users-gear"></i>Staff</button></li>
       </ul>
     </div>
 
@@ -959,11 +1016,11 @@
             <h5 class="section-title">Products</h5>
             <p class="section-sub">Manage your inventory, prices and stock levels.</p>
           </div>
-          <div class="d-flex gap-2 flex-wrap">
-            <button class="btn btn-soft" onclick="window.openStockTakeModal()"><i class="fas fa-clipboard-check me-1 text-success"></i>Stock Take</button>
-            <button class="btn btn-soft admin-only d-none" onclick="window.openStockTakeHistory()"><i class="fas fa-clock-rotate-left me-1"></i>Count history</button>
-            <button class="btn btn-soft admin-only d-none" onclick="window.openCategoriesModal()"><i class="fas fa-tags me-1"></i>Categories</button>
-            <button class="btn btn-custom admin-only d-none" onclick="window.openAddProductModal()">
+          <div class="action-row">
+            <button class="btn btn-soft d-none" data-perm="stocktake.count" onclick="window.openStockTakeModal()"><i class="fas fa-clipboard-check me-1 text-success"></i>Stock Take</button>
+            <button class="btn btn-soft d-none" data-perm="stocktake.history" onclick="window.openStockTakeHistory()" title="Count history"><i class="fas fa-clock-rotate-left me-1"></i><span class="d-sm-none">History</span><span class="d-none d-sm-inline">Count history</span></button>
+            <button class="btn btn-soft d-none" data-perm="categories.manage" onclick="window.openCategoriesModal()"><i class="fas fa-tags me-1"></i>Categories</button>
+            <button class="btn btn-custom ar-primary d-none" data-perm="products.add" onclick="window.openAddProductModal()">
               <i class="fas fa-plus me-1"></i> Add Product
             </button>
           </div>
@@ -994,7 +1051,7 @@
             <h5 class="section-title">Customers</h5>
             <p class="section-sub">People you sell to and their contact details.</p>
           </div>
-          <button class="btn btn-custom" onclick="window.openCustomerModal()">
+          <button class="btn btn-custom d-none" data-perm="customers.add" onclick="window.openCustomerModal()">
             <i class="fas fa-user-plus me-1"></i> Add Customer
           </button>
         </div>
@@ -1018,7 +1075,7 @@
             <h5 class="section-title">Point of Sale</h5>
             <p class="section-sub">Search a product, set the quantity and add it to the cart.</p>
           </div>
-          <button class="btn btn-soft" onclick="window.openCloseDayModal()"><i class="fas fa-calendar-check me-1 text-success"></i>Close Day</button>
+          <button class="btn btn-soft ar-small d-none" data-perm="closeday.do" onclick="window.openCloseDayModal()"><i class="fas fa-calendar-check me-1 text-success"></i>Close Day</button>
         </div>
 
         <div class="row g-3">
@@ -1031,7 +1088,7 @@
                     <select id="posCustomer" class="form-select">
                       <option value="">Guest</option>
                     </select>
-                    <button class="btn btn-soft btn-icon flex-shrink-0" style="width:42px;height:auto" data-bs-toggle="modal" data-bs-target="#addCustomerModal" title="Quick add customer">
+                    <button class="btn btn-soft btn-icon flex-shrink-0" style="width:42px;height:auto" data-bs-toggle="modal" data-bs-target="#addCustomerModal" title="Quick add customer" data-perm="customers.add">
                       <i class="fas fa-plus"></i>
                     </button>
                   </div>
@@ -1086,24 +1143,24 @@
             <h5 class="section-title">Sales Reporting</h5>
             <p class="section-sub">Review transactions, profits and daily summaries.</p>
           </div>
-          <button class="btn btn-custom" onclick="window.openCloseDayModal()"><i class="fas fa-calendar-check me-1"></i>Close Day</button>
+          <button class="btn btn-custom d-none" data-perm="closeday.do" onclick="window.openCloseDayModal()"><i class="fas fa-calendar-check me-1"></i>Close Day</button>
         </div>
 
         <div class="nav sales-subtabs" id="salesSubTabs" role="tablist">
           <button class="subtab active" role="tab" data-bs-toggle="tab" data-bs-target="#salesSubTx"><i class="fas fa-receipt"></i>Sales</button>
           <button class="subtab" role="tab" data-bs-toggle="tab" data-bs-target="#salesSubDaily"><i class="fas fa-calendar-day"></i>Daily Products Sold</button>
-          <button class="subtab admin-only d-none" role="tab" data-bs-toggle="tab" data-bs-target="#salesSubProfit"><i class="fas fa-sack-dollar"></i>Profit</button>
-          <button class="subtab admin-only d-none" role="tab" data-bs-toggle="tab" data-bs-target="#salesSubClosings"><i class="fas fa-calendar-check"></i>Closing Day</button>
+          <button class="subtab d-none" data-perm="view.profit" role="tab" data-bs-toggle="tab" data-bs-target="#salesSubProfit"><i class="fas fa-sack-dollar"></i>Profit</button>
+          <button class="subtab d-none" data-perm="closeday.history" role="tab" data-bs-toggle="tab" data-bs-target="#salesSubClosings"><i class="fas fa-calendar-check"></i>Closing Day</button>
         </div>
 
         <div class="card panel mb-3" id="salesFilters">
           <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <h6 class="mb-0 fw-bold"><i class="fas fa-receipt me-2 text-muted"></i>Sales History &amp; Search</h6>
-            <div class="d-flex gap-2 align-items-center flex-wrap">
+            <div class="action-row ar-2">
               <input type="date" id="dateFrom" class="form-control form-control-sm" style="width:auto" title="From">
               <input type="date" id="dateTo" class="form-control form-control-sm" style="width:auto" title="To">
-              <button id="downloadFilteredPDF" class="btn btn-soft btn-sm"><i class="fas fa-file-pdf me-1 text-danger"></i>PDF Range</button>
-              <button id="downloadAllPDF" class="btn btn-soft btn-sm"><i class="fas fa-file-pdf me-1 text-danger"></i>Download All</button>
+              <button id="downloadFilteredPDF" class="btn btn-soft btn-sm d-none" data-perm="reports.download"><i class="fas fa-file-pdf me-1 text-danger"></i>PDF Range</button>
+              <button id="downloadAllPDF" class="btn btn-soft btn-sm d-none" data-perm="reports.download"><i class="fas fa-file-pdf me-1 text-danger"></i>Download All</button>
             </div>
           </div>
 
@@ -1117,7 +1174,7 @@
 
           <div class="input-group mb-3">
             <span class="input-group-text"><i class="fas fa-search"></i></span>
-            <input type="text" id="salesSearchInput" class="form-control" placeholder="Search by product, customer, or receipt code...">
+            <input type="text" id="salesSearchInput" class="form-control" placeholder="Search sales..." title="Search by product, customer or receipt code">
             <button class="btn btn-soft" type="button" onclick="document.getElementById('salesSearchInput').value=''; window.filterSalesTable();">Clear</button>
           </div>
 
@@ -1136,7 +1193,7 @@
             </div>
           </div>
           <div class="tab-pane fade" id="salesSubProfit">
-            <div class="row g-3 admin-only d-none mb-3 align-items-start">
+            <div class="row g-3 d-none mb-3 align-items-start" data-perm="view.profit">
               <div class="col-md-6">
                 <div class="card profit-card green">
                   <div class="d-flex justify-content-between align-items-start">
@@ -1166,7 +1223,7 @@
             </div>
           </div>
           <div class="tab-pane fade" id="salesSubClosings">
-            <div class="card panel admin-only d-none">
+            <div class="card panel d-none" data-perm="closeday.history">
               <h6 class="fw-bold mb-1"><i class="fas fa-calendar-check me-2 text-muted"></i>Day Closings</h6>
               <p class="section-sub mb-3">Cash counted at the end of each day compared with what the system expected.</p>
               <div class="table-wrap">
@@ -1202,7 +1259,7 @@
           </div>
         </div>
 
-        <div class="card panel admin-only d-none mb-3">
+        <div class="card panel mb-3">
           <div class="sw-head">
             <div class="d-flex align-items-center gap-3">
               <span class="sw-head-ico"><i class="fas fa-brain"></i></span>
@@ -1221,7 +1278,7 @@
           <div class="col-6 col-lg-3"><div class="card stat-card"><span class="stat-icon ic-blue mb-2"><i class="fas fa-receipt"></i></span><div class="stat-label">Orders</div><div id="kpiOrders" class="stat-value">0</div></div></div>
           <div class="col-6 col-lg-3"><div class="card stat-card"><span class="stat-icon ic-violet mb-2"><i class="fas fa-scale-balanced"></i></span><div class="stat-label">Avg. order</div><div id="kpiAvg" class="stat-value">KSh 0</div></div></div>
           <div class="col-6 col-lg-3"><div class="card stat-card"><span class="stat-icon ic-amber mb-2"><i class="fas fa-wine-bottle"></i></span><div class="stat-label">Units sold</div><div id="kpiUnits" class="stat-value">0</div></div></div>
-          <div class="col-12 admin-only d-none"><div class="card stat-card d-flex flex-row align-items-center gap-3"><span class="stat-icon ic-green"><i class="fas fa-arrow-trend-up"></i></span><div><div class="stat-label">Profit in this period</div><div id="kpiProfit" class="stat-value">KSh 0</div></div></div></div>
+          <div class="col-12 d-none" data-perm="view.profit"><div class="card stat-card d-flex flex-row align-items-center gap-3"><span class="stat-icon ic-green"><i class="fas fa-arrow-trend-up"></i></span><div><div class="stat-label">Profit in this period</div><div id="kpiProfit" class="stat-value">KSh 0</div></div></div></div>
         </div>
 
         <div class="row g-3 mb-3">
@@ -1245,7 +1302,7 @@
           </div>
         </div>
 
-        <div class="card panel admin-only d-none mb-3">
+        <div class="card panel mb-3">
           <h6 class="fw-bold mb-1"><i class="fas fa-fire me-2 text-muted"></i>Busy times</h6>
           <p class="section-sub mb-3">When your customers come. Uses the period chosen at the top; 30 or 90 days gives the most reliable picture.</p>
           <div id="busyInsights" class="busy-chips mb-3"></div>
@@ -1261,7 +1318,7 @@
           </div>
         </div>
 
-        <div class="card panel admin-only d-none mb-3">
+        <div class="card panel d-none mb-3" data-perm="view.profit">
           <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
             <div>
               <h6 class="fw-bold mb-1"><i class="fas fa-magnifying-glass-chart me-2 text-muted"></i>Profit per product</h6>
@@ -1296,7 +1353,7 @@
           <div id="ppMore" class="mt-3"></div>
         </div>
 
-        <div class="card panel admin-only d-none mb-3">
+        <div class="card panel d-none mb-3" data-perm="view.profit">
           <h6 class="fw-bold mb-1"><i class="fas fa-layer-group me-2 text-muted"></i>Profit by category</h6>
           <p class="section-sub mb-3">Which kinds of products make your money. Use the Categories button in the Products tab to sort your products.</p>
           <div class="table-wrap">
@@ -1314,7 +1371,7 @@
           </div>
         </div>
 
-        <div class="card panel admin-only d-none">
+        <div class="card panel d-none" data-perm="view.profit">
           <h6 class="fw-bold mb-1"><i class="fas fa-file-invoice-dollar me-2 text-muted"></i>Profit &amp; Loss by Month</h6>
           <p class="section-sub mb-3">Gross profit = sales minus the cost of the goods sold. Rent, salaries and other expenses are not included.</p>
           <div class="chart-box mb-3"><canvas id="plChart"></canvas></div>
@@ -1342,7 +1399,7 @@
             <h5 class="section-title">Staff Clock In &amp; Out</h5>
             <p class="section-sub">Record your shift and review attendance history.</p>
           </div>
-          <div class="d-flex gap-2 flex-wrap">
+          <div class="action-row ar-2">
             <button onclick="window.clockIn()" class="btn btn-success"><i class="fas fa-right-to-bracket me-1"></i>Clock In</button>
             <button onclick="window.clockOut()" class="btn btn-danger"><i class="fas fa-right-from-bracket me-1"></i>Clock Out</button>
           </div>
@@ -1351,7 +1408,7 @@
         <div class="card panel">
           <div class="d-flex justify-content-between align-items-center mb-3">
             <h6 class="mb-0 fw-bold">Records</h6>
-            <button class="btn btn-soft btn-sm admin-only d-none" onclick="exportAttendance()"><i class="fas fa-file-pdf me-1 text-danger"></i>Download PDF Report</button>
+            <button class="btn btn-soft btn-sm d-none" data-perm="attendance.export" onclick="exportAttendance()"><i class="fas fa-file-pdf me-1 text-danger"></i>Download PDF Report</button>
           </div>
           <div class="table-wrap">
             <div class="table-responsive">
@@ -1359,10 +1416,10 @@
                 <thead>
                   <tr>
                     <th>Date</th>
-                    <th class="admin-only d-none">Staff</th>
+                    <th class="d-none" data-perm="attendance.viewAll">Staff</th>
                     <th>In</th>
                     <th>Out</th>
-                    <th class="admin-only d-none text-end">Action</th>
+                    <th class="d-none text-end" data-perm="attendance.delete">Action</th>
                   </tr>
                 </thead>
                 <tbody id="attendanceTable"></tbody>
@@ -1379,9 +1436,9 @@
             <h5 class="section-title">Restock Logs</h5>
             <p class="section-sub">History of stock additions, adjustments and new products.</p>
           </div>
-          <div class="d-flex gap-2 flex-wrap">
-            <button class="btn btn-soft btn-sm" id="downloadRestocksPdfBtn"><i class="fas fa-file-pdf me-1 text-danger"></i>Restocks PDF</button>
-            <button class="btn btn-soft btn-sm" id="downloadNewProdsPdfBtn"><i class="fas fa-file-pdf me-1 text-danger"></i>New Products PDF</button>
+          <div class="action-row ar-2">
+            <button class="btn btn-soft btn-sm d-none" data-perm="reports.download" id="downloadRestocksPdfBtn"><i class="fas fa-file-pdf me-1 text-danger"></i>Restocks PDF</button>
+            <button class="btn btn-soft btn-sm d-none" data-perm="reports.download" id="downloadNewProdsPdfBtn"><i class="fas fa-file-pdf me-1 text-danger"></i>New Products PDF</button>
           </div>
         </div>
 
@@ -1407,8 +1464,8 @@
             <h5 class="section-title">Stock Requisition</h5>
             <p class="section-sub">Build a list of products to order and export it as PDF.</p>
           </div>
-          <div class="d-flex gap-2 flex-wrap align-items-center">
-            <select id="priceTypeSelect" class="form-select form-select-sm" style="width:auto" title="Default price type">
+          <div class="action-row ar-2">
+            <select id="priceTypeSelect" class="form-select form-select-sm ar-full" style="width:auto" title="Default price type">
               <option value="sellPrice">Sell Price</option>
               <option value="buyPrice">Buy Price</option>
             </select>
@@ -1449,34 +1506,72 @@
 
       <!-- ================= STAFF MANAGEMENT ================= -->
       <div class="tab-pane fade" id="staffManagementTab" role="tabpanel">
-        <div class="section-head">
-          <div>
-            <h5 class="section-title">Staff Management</h5>
-            <p class="section-sub">Create, edit, block or remove employee accounts.</p>
-          </div>
-          <button class="btn btn-custom" onclick="window.openStaffModal()">
-            <i class="fas fa-user-plus me-1"></i> Add Staff
-          </button>
-        </div>
 
-        <div class="card panel">
-          <div class="table-wrap">
-            <div class="table-responsive">
-              <table class="table table-hover align-middle table-compact">
-                <thead>
-                  <tr>
-                    <th>Employee</th>
-                    <th>Email</th>
-                    <th>Role</th>
-                    <th>Status</th>
-                    <th class="text-end">Actions</th>
-                  </tr>
-                </thead>
-                <tbody id="staffTableBody"></tbody>
-              </table>
+        <!-- Staff accounts -->
+        <div id="staffMainView">
+          <div class="section-head">
+            <div>
+              <h5 class="section-title">Staff Management</h5>
+              <p class="section-sub">Create, edit, block or remove employee accounts.</p>
+            </div>
+            <div class="action-row">
+              <button class="btn btn-soft admin-only d-none" onclick="window.openPermissionsView()"><i class="fas fa-sliders me-1"></i>Edit permissions</button>
+              <button class="btn btn-custom ar-primary" onclick="window.openStaffModal()">
+                <i class="fas fa-user-plus me-1"></i> Add Staff
+              </button>
+            </div>
+          </div>
+
+          <div class="card panel">
+            <div class="table-wrap">
+              <div class="table-responsive">
+                <table class="table table-hover align-middle table-compact">
+                  <thead>
+                    <tr>
+                      <th>Employee</th>
+                      <th>Email</th>
+                      <th>Role</th>
+                      <th>Status</th>
+                      <th class="text-end">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="staffTableBody"></tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>
+
+        <!-- Roles & permissions (opens in place of the staff list) -->
+        <div id="permView" class="d-none">
+          <div class="section-head">
+            <div>
+              <button type="button" class="btn btn-soft btn-sm mb-2" onclick="window.closePermissionsView()"><i class="fas fa-arrow-left me-1"></i>Back to staff</button>
+              <h5 class="section-title">Roles &amp; permissions <span id="permDirty" class="badge rounded-pill text-bg-warning ms-2 d-none">unsaved</span></h5>
+              <p class="section-sub">Tick what each role may see and do. Admins can always do everything.</p>
+            </div>
+            <div class="action-row perm-actions">
+              <button type="button" id="permResetBtn" class="btn btn-soft" onclick="window.resetPermissions(window.permRole)"><i class="fas fa-rotate-left me-1"></i>Reset</button>
+              <button type="button" class="btn btn-soft" onclick="window.discardPermissionChanges()">Discard</button>
+              <button type="button" id="permSaveBtn" class="btn btn-custom ar-primary" onclick="window.savePermissions()" disabled><i class="fas fa-floppy-disk me-1"></i>Save permissions</button>
+            </div>
+          </div>
+
+          <div id="permRoleTabs" class="perm-roletabs"></div>
+
+          <div class="search-box mb-3">
+            <i class="fas fa-search"></i>
+            <input id="permSearch" class="form-control" placeholder="Search permissions..." oninput="window.renderPermissionEditor()" autocomplete="off">
+          </div>
+
+          <div id="permGroupPills" class="nav sales-subtabs" role="tablist"></div>
+
+          <div class="card panel">
+            <div id="permList"></div>
+            <div class="perm-note mt-3"><i class="fas fa-triangle-exclamation me-1"></i>The warning sign marks permissions that can lose data or change money records, so allow them only for people you fully trust. Changes apply to everyone as soon as you press Save.</div>
+          </div>
+        </div>
+
       </div>
 
     </div><!-- /tab-content -->
@@ -1640,8 +1735,8 @@
       <div class="modal-footer justify-content-between">
         <button type="button" class="btn btn-soft" data-bs-dismiss="modal">Cancel</button>
         <div class="d-flex gap-2">
-          <button type="button" id="stockRemoveBtn" class="btn btn-outline-danger admin-only d-none"><i class="fas fa-minus me-1"></i>Reduce</button>
-          <button type="button" id="stockAddBtn" class="btn btn-success"><i class="fas fa-plus me-1"></i>Add Stock</button>
+          <button type="button" id="stockRemoveBtn" class="btn btn-outline-danger d-none" data-perm="stock.reduce"><i class="fas fa-minus me-1"></i>Reduce</button>
+          <button type="button" id="stockAddBtn" class="btn btn-success d-none" data-perm="stock.add"><i class="fas fa-plus me-1"></i>Add Stock</button>
         </div>
       </div>
     </div>
@@ -2133,11 +2228,11 @@
 
         <div id="closeDayExisting" class="alert alert-warning py-2 px-3 small d-none"></div>
 
-        <div class="cd-box mb-3 manager-up d-none" id="closeDayBreakdown"></div>
+        <div class="cd-box mb-3 d-none" data-perm="closeday.seeResult" id="closeDayBreakdown"></div>
 
         <div id="closeDayStaffHint" class="alert alert-info py-2 px-3 small d-none"><i class="fas fa-hand-holding-dollar me-1"></i>Count all the cash in the till, including the opening float, and enter the total below.</div>
 
-        <div class="cd-expected mb-3 manager-up d-none">
+        <div class="cd-expected mb-3 d-none" data-perm="closeday.seeResult">
           <span>Expected cash in till<small>opening float + cash sales + cash repayments</small></span>
           <strong id="closeDayExpected">KSh 0.00</strong>
         </div>
@@ -2146,7 +2241,7 @@
           <label class="form-label" for="closeDayCounted">Cash actually counted (KSh)</label>
           <input type="number" step="any" min="0" id="closeDayCounted" class="form-control form-control-lg" placeholder="0.00">
         </div>
-        <div id="closeDayDiff" class="mb-3 manager-up d-none"></div>
+        <div id="closeDayDiff" class="mb-3 d-none" data-perm="closeday.seeResult"></div>
 
         <div>
           <label class="form-label" for="closeDayNotes">Notes <span class="text-muted fw-normal">(optional)</span></label>
@@ -2313,7 +2408,7 @@
         <h5 class="modal-title"><span class="m-ico"><i class="fas fa-bell"></i></span>Activity &amp; Restock Notifications</h5>
         <div class="d-flex align-items-center gap-2">
           <button type="button" class="btn btn-soft btn-sm" onclick="window.markAllNotifsAsRead()"><i class="fas fa-check-double me-1"></i>Mark all read</button>
-          <button type="button" class="btn btn-outline-danger btn-sm admin-only d-none" onclick="window.clearAllNotifications()"><i class="fas fa-trash-can me-1"></i>Clear all</button>
+          <button type="button" class="btn btn-outline-danger btn-sm d-none" data-perm="notifications.delete" onclick="window.clearAllNotifications()"><i class="fas fa-trash-can me-1"></i>Clear all</button>
           <button type="button" class="btn-close ms-1" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
       </div>
@@ -2347,7 +2442,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
 
-<script src="main.js?v=20261045"></script>
+<script src="main.js?v=20261061"></script>
 <script>
   // If a stale cached main.js was loaded (new buttons need its functions), reload once bypassing the cache
   if (typeof window.openAddProductModal !== 'function') {

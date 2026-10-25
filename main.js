@@ -16,6 +16,7 @@
    SECTION 12 : ADMIN STAFF MANAGEMENT MODULE
    SECTION 12B: INSIGHTS (CHARTS), PROFIT & LOSS AND DAY CLOSING
    SECTION 12E: CATEGORIES, BUSY TIMES AND SMART WARNINGS
+   SECTION 12F: ROLES & PERMISSIONS EDITOR (permission list and can() are near the top)
    SECTION 13 : UI NAVIGATION & SCROLL HELPERS
    ========================================================================== */
 
@@ -193,6 +194,152 @@ function itemLabel(item) {
     return item.unit === "tot" ? `${item.name} (tot)` : item.name;
 }
 
+
+/* ==========================================================================
+   PERMISSIONS
+   What each role may do is ticked by the admin in the Staff tab and saved in Firebase.
+   An admin can always do everything. Staff and Manager follow the ticks; anything the
+   admin has not ticked yet falls back to the defaults below (which match how the
+   system behaved before permissions became adjustable).
+   staff / manager = default for that role.  risk = worth a second thought before ticking.
+   ========================================================================== */
+const PERMISSION_GROUPS = [
+    {
+        id: "see", title: "Dashboard & reports", icon: "fa-chart-pie", items: [
+            { key: "view.monthlySales", label: "See the monthly sales total", hint: "Dashboard card", staff: false, manager: false },
+            { key: "view.stockValue", label: "See the total stock value", hint: "Cost and expected value of all stock", staff: false, manager: false },
+            { key: "view.target", label: "See the monthly target", hint: "Target progress bar on the dashboard", staff: false, manager: false },
+            { key: "target.set", label: "Set the monthly target", hint: "Change the target amount", staff: false, manager: false },
+            { key: "view.buyPrices", label: "See buy (cost) prices", hint: "The Buy column in Products", staff: false, manager: false },
+            { key: "view.profit", label: "See profit", hint: "Profit section, profit cards, profit per product and the Profit & Loss table", staff: false, manager: false },
+            { key: "view.insights", label: "Open the Insights tab", hint: "Charts, busy times and smart warnings", staff: false, manager: false },
+            { key: "reports.download", label: "Download PDF reports and receipts", hint: "Sales reports, receipts and restock reports", staff: true, manager: true },
+            { key: "view.restockLogs", label: "See the Restock Logs tab", hint: "History of stock added or adjusted", staff: true, manager: true }
+        ]
+    },
+    {
+        id: "stock", title: "Products & stock", icon: "fa-boxes-stacked", items: [
+            { key: "products.add", label: "Add products", hint: "Register a new product", staff: false, manager: false },
+            { key: "products.edit", label: "Edit products", hint: "Change names, prices and minimum stock", staff: false, manager: false, risk: true },
+            { key: "products.delete", label: "Delete products", hint: "Remove a product completely", staff: false, manager: false, risk: true },
+            { key: "categories.manage", label: "Manage categories", hint: "Sort products into categories", staff: false, manager: false },
+            { key: "stock.add", label: "Add stock (restock)", hint: "Record bottles received", staff: false, manager: true },
+            { key: "stock.reduce", label: "Reduce stock", hint: "Record losses and corrections", staff: false, manager: false, risk: true },
+            { key: "stocktake.count", label: "Do a stock take", hint: "Count the shelf and submit the numbers", staff: true, manager: true },
+            { key: "stocktake.seeSystem", label: "See system stock while counting", hint: "Off means they count blind", staff: false, manager: true },
+            { key: "stocktake.history", label: "See stock count results", hint: "Short and over items with their value", staff: false, manager: false },
+            { key: "stocktake.apply", label: "Apply or delete stock counts", hint: "Change stock to match a count", staff: false, manager: false, risk: true },
+            { key: "requisition.use", label: "Use Requisition and reorder suggestions", hint: "Order lists use buy prices", staff: false, manager: false }
+        ]
+    },
+    {
+        id: "sales", title: "Sales & POS", icon: "fa-cash-register", items: [
+            { key: "pos.sell", label: "Make sales (POS)", hint: "Open the POS tab and check out", staff: true, manager: true },
+            { key: "pos.credit", label: "Sell on credit", hint: "Put a sale on a customer's tab", staff: true, manager: true },
+            { key: "sales.view", label: "See the Sales tab", hint: "Sales list and daily products sold", staff: true, manager: true },
+            { key: "sales.delete", label: "Delete a sale or an item in a sale", hint: "Can also put the stock back", staff: false, manager: false, risk: true },
+            { key: "sales.deleteBulk", label: "Delete a whole day or month of sales", hint: "Removes many sales at once", staff: false, manager: false, risk: true }
+        ]
+    },
+    {
+        id: "close", title: "Closing the day", icon: "fa-calendar-check", items: [
+            { key: "closeday.do", label: "Close the day", hint: "Count the cash in the till", staff: true, manager: true },
+            { key: "closeday.seeResult", label: "See expected cash and the result", hint: "Off means they count blind", staff: false, manager: true },
+            { key: "closeday.replace", label: "Replace a day that is already closed", hint: "Overwrites an earlier closing", staff: false, manager: false, risk: true },
+            { key: "closeday.history", label: "See the Closing Day history", hint: "Every closing with short or over amounts", staff: false, manager: false },
+            { key: "closeday.delete", label: "Delete a closing", hint: "Opens that day again", staff: false, manager: false, risk: true }
+        ]
+    },
+    {
+        id: "customers", title: "Customers", icon: "fa-address-book", items: [
+            { key: "customers.view", label: "See the Customers tab", hint: "Customers, balances and statements", staff: true, manager: true },
+            { key: "customers.add", label: "Add customers", hint: "Also the quick add button in POS", staff: true, manager: true },
+            { key: "customers.payment", label: "Record customer payments", hint: "Money received against a tab", staff: true, manager: true },
+            { key: "customers.delete", label: "Delete customers", hint: "Customers who owe money cannot be deleted", staff: false, manager: false, risk: true }
+        ]
+    },
+    {
+        id: "attendance", title: "Attendance", icon: "fa-user-clock", items: [
+            { key: "attendance.clock", label: "Use Clock In & Out", hint: "Clock in and out and see their own records", staff: true, manager: true },
+            { key: "attendance.viewAll", label: "See everyone's attendance", hint: "All staff records, not just their own", staff: false, manager: false },
+            { key: "attendance.export", label: "Download the attendance report", hint: "PDF of the records they can see", staff: false, manager: false },
+            { key: "attendance.delete", label: "Delete attendance records", hint: "Remove a clock in or out", staff: false, manager: false, risk: true }
+        ]
+    },
+    {
+        id: "logs", title: "Notifications & logs", icon: "fa-bell", items: [
+            { key: "notifications.delete", label: "Delete notifications", hint: "Remove one or clear them all", staff: false, manager: false },
+            { key: "logs.delete", label: "Delete restock log entries", hint: "Remove entries or whole days from the logs", staff: false, manager: false, risk: true }
+        ]
+    },
+    {
+        id: "admin", title: "Administration", icon: "fa-user-shield", items: [
+            { key: "staff.manage", label: "Manage staff accounts", hint: "Add, edit, block or delete staff and managers. They can never create or change an admin, or change permissions.", staff: false, manager: false, risk: true },
+            { key: "alerts.manage", label: "Change phone alert settings", hint: "Telegram, WhatsApp and email alerts (holds secret keys)", staff: false, manager: false, risk: true }
+        ]
+    }
+];
+
+const PERMISSION_DEFAULTS = (() => {
+    const d = { staff: {}, manager: {} };
+    PERMISSION_GROUPS.forEach(g => g.items.forEach(i => { d.staff[i.key] = !!i.staff; d.manager[i.key] = !!i.manager; }));
+    return d;
+})();
+
+window.permissions = { staff: {}, manager: {} };
+
+/**
+ * Can the person who is logged in do this? Admin: always. Anyone else follows the ticks.
+ * Unknown roles are treated like staff.
+ */
+function can(key) {
+    const role = (window.currentRole || localStorage.getItem("currentRole") || "").toString().toLowerCase().trim();
+    if (role === "admin") return true;
+    const r = role === "manager" ? "manager" : "staff";
+    const custom = (window.permissions && window.permissions[r]) || {};
+    return custom[key] !== undefined ? !!custom[key] : !!PERMISSION_DEFAULTS[r][key];
+}
+
+function denyAccess(action) {
+    return Swal.fire("Access Denied", action ? `You do not have permission to ${action}. Ask an admin.` : "You do not have permission for this. Ask an admin.", "error");
+}
+
+/**
+ * Shows or hides every element tagged data-perm="some.key" (or "a.key|b.key" = either one is enough)
+ */
+window.applyPermissionUI = () => {
+    document.querySelectorAll("[data-perm]").forEach(el => {
+        const keys = String(el.dataset.perm).split("|");
+        el.classList.toggle("d-none", !keys.some(k => can(k)));
+    });
+};
+
+/**
+ * Redraws everything whose content depends on permissions
+ */
+function refreshForPermissions() {
+    window.applyPermissionUI();
+    if (typeof window.renderProductsFiltered === "function" && (window.productsCache || []).length) window.renderProductsFiltered();
+    if (typeof window.filterSalesTable === "function") window.filterSalesTable();
+    if (typeof renderGroupedSales === "function" && window.allSales) renderGroupedSales(window.allSales);
+    if (typeof window.renderProfitCardBreakdown === "function") window.renderProfitCardBreakdown();
+    if (typeof window.refreshRestockLogTables === "function") window.refreshRestockLogTables();
+    if (typeof window.renderDayClosings === "function") window.renderDayClosings();
+    if (typeof window.renderInsights === "function") window.renderInsights();
+    if (typeof window.refreshNotificationUI === "function") window.refreshNotificationUI();
+    if (window.lastCustomersSnap && typeof renderCustomersFromSnap === "function") renderCustomersFromSnap(window.lastCustomersSnap);
+    if (window.activeAttendanceListener && typeof startAttendanceRealtimeListener === "function") startAttendanceRealtimeListener();
+}
+
+// The admin's ticks, live: a change applies straight away to everyone who is logged in
+window.db.collection("settings").doc("permissions").onSnapshot(doc => {
+    const data = doc.exists ? doc.data() : {};
+    window.permissions = { staff: data.staff || {}, manager: data.manager || {} };
+    refreshForPermissions();
+    if (typeof window.onPermissionsChanged === "function") window.onPermissionsChanged();
+}, err => console.warn("Permissions listener:", err));
+
+
 /**
  * Converts decimal numerical values into human-readable mixed fraction strings (e.g. 5.5 -> "5 ½", 0.25 -> "¼", 5 -> "5")
  */
@@ -328,7 +475,7 @@ window.db.collection("settings").doc("sales_target").onSnapshot(doc => {
  * Opens Admin Monthly Sales Target modal
  */
 window.openTargetModal = () => {
-    if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
+    if (!can("target.set")) return denyAccess("set the monthly target");
     const modeSelect = document.getElementById("targetModeSelect");
     const pctInput = document.getElementById("targetPercentageInput");
     const fixedInput = document.getElementById("targetFixedInput");
@@ -368,7 +515,7 @@ window.toggleTargetInputMode = () => {
  * Saves Admin Target Configuration to Firestore
  */
 window.saveTargetSettings = async () => {
-    if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
+    if (!can("target.set")) return denyAccess("set the monthly target");
     const modeSelect = document.getElementById("targetModeSelect");
     const pctInput = document.getElementById("targetPercentageInput");
     const fixedInput = document.getElementById("targetFixedInput");
@@ -401,8 +548,8 @@ window.saveTargetSettings = async () => {
  * Deletes a single log document entry from a Firestore collection
  */
 window.deleteLogEntry = async (collectionName, logId) => {
-    if (!isAdmin()) {
-        return Swal.fire("Access Denied", "Admins only", "error");
+    if (!can("logs.delete")) {
+        return denyAccess("delete log entries");
     }
 
     const result = await Swal.fire({
@@ -429,8 +576,8 @@ window.deleteLogEntry = async (collectionName, logId) => {
  * Bulk deletes an entire date group of logs from Firestore using WriteBatch
  */
 window.deleteDateGroupLogs = async function (collectionName, idsJsonString, dateTitle) {
-    if (!isAdmin()) {
-        return Swal.fire("Access Denied", "Admins only", "error");
+    if (!can("logs.delete")) {
+        return denyAccess("delete log entries");
     }
 
     let logIds = [];
@@ -506,10 +653,8 @@ function updateUIByRole(role) {
     document.querySelectorAll(".admin-only").forEach(el => {
         el.classList.toggle("d-none", window.currentRole !== "admin");
     });
-    // Things managers may also use (restock, stock take, close day)
-    document.querySelectorAll(".manager-up").forEach(el => {
-        el.classList.toggle("d-none", window.currentRole !== "admin" && window.currentRole !== "manager");
-    });
+    // Show or hide everything that depends on what this role is allowed to do
+    if (typeof window.applyPermissionUI === "function") window.applyPermissionUI();
 
     // Re-render products table so Admin / Manager buttons appear immediately
     if (typeof window.renderProductsFiltered === "function" && window.productsCache && window.productsCache.length > 0) {
@@ -841,18 +986,18 @@ function startAttendanceRealtimeListener() {
                 if (!a.clockIn) return;
 
                 const email = getCurrentUserEmail();
-                const role = window.currentRole || "staff";
-                const isAdminRole = role === "admin";
+                const seeAll = can("attendance.viewAll");
+                const canDelete = can("attendance.delete");
 
-                if (!isAdminRole && a.staffEmail !== email) return;
+                if (!seeAll && a.staffEmail !== email) return;
 
                 rowsHTML += `
                     <tr>
                         <td data-label="Date">${a.date}</td>
-                        ${isAdminRole ? `<td data-label="Staff">${a.staffEmail}</td>` : ""}
+                        ${seeAll ? `<td data-label="Staff">${a.staffEmail}</td>` : ""}
                         <td data-label="In">${a.clockIn.toDate().toLocaleTimeString()}</td>
                         <td data-label="Out">${a.clockOut ? a.clockOut.toDate().toLocaleTimeString() + (a.clockOutManual ? ' <span class="badge text-bg-light border" title="Entered manually by staff on next login">manual</span>' : '') : "Ongoing"}</td>
-                        ${isAdminRole ? `
+                        ${canDelete ? `
                             <td class="text-end">
                                 <button class="btn btn-sm btn-outline-danger"
                                     title="Delete Attendance Record"
@@ -866,7 +1011,7 @@ function startAttendanceRealtimeListener() {
             });
 
             if (!rowsHTML) {
-                rowsHTML = `<tr><td colspan="${isAdmin() ? 5 : 3}" class="text-center text-muted py-3">No attendance records found.</td></tr>`;
+                rowsHTML = `<tr><td colspan="${3 + (can("attendance.viewAll") ? 1 : 0) + (can("attendance.delete") ? 1 : 0)}" class="text-center text-muted py-3">No attendance records found.</td></tr>`;
             }
 
             attendanceTable.innerHTML = rowsHTML;
@@ -955,7 +1100,7 @@ window.clockOut = async () => {
  * Deletes attendance record (Admin only)
  */
 window.deleteAttendanceRecord = async (id) => {
-    if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
+    if (!can("attendance.delete")) return denyAccess("delete attendance records");
 
     const result = await Swal.fire({
         title: "Delete this record?",
@@ -977,6 +1122,7 @@ window.deleteAttendanceRecord = async (id) => {
  * Exports Attendance Report to PDF
  */
 window.exportAttendance = async () => {
+    if (!can("attendance.export")) return denyAccess("download the attendance report");
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
 
@@ -984,7 +1130,7 @@ window.exportAttendance = async () => {
     const role = window.currentRole || "staff";
 
     let query = window.db.collection("attendance").orderBy("clockIn", "desc");
-    if (role !== "admin") {
+    if (!can("attendance.viewAll")) {
         query = query.where("staffEmail", "==", email);
     }
 
@@ -1020,7 +1166,7 @@ window.exportAttendance = async () => {
  * Opens the Update Stock modal for a product (Admin only)
  */
 window.openStockModal = (productId, productName) => {
-    if (!isManagerOrAdmin()) return Swal.fire("Access Denied", "Managers and admins only", "error");
+    if (!(can("stock.add") || can("stock.reduce"))) return denyAccess("change stock");
 
     const prodDoc = (window.productsCache || []).find(d => d.id === productId);
     window.stockModalProduct = { id: productId, name: productName };
@@ -1043,7 +1189,7 @@ function closeStockModal() {
 }
 
 window.quickRestock = async (productId, productName) => {
-    if (!isManagerOrAdmin()) return Swal.fire("Access Denied", "Managers and admins only", "error");
+    if (!can("stock.add")) return denyAccess("add stock");
 
     const inputEl = document.getElementById("stockQtyInput");
     if (!inputEl) return;
@@ -1107,9 +1253,9 @@ window.quickRestock = async (productId, productName) => {
  * Dynamic Inventory Adjustments (+ / - buttons with reason, snapshot tracking & real-time notification)
  */
 window.adjustStock = async (productId, productName, operationalMode) => {
-    if (!isManagerOrAdmin()) return Swal.fire("Access Denied", "Managers and admins only", "error");
-    // Managers can add stock; reducing stock (losses, corrections) stays with the admin
-    if (operationalMode !== "add" && !isAdmin()) return Swal.fire("Access Denied", "Only an admin can reduce stock", "error");
+    if (operationalMode === "add" ? !can("stock.add") : !can("stock.reduce")) {
+        return denyAccess(operationalMode === "add" ? "add stock" : "reduce stock");
+    }
 
     const qtyEl = document.getElementById("stockQtyInput");
     const reasonEl = document.getElementById("stockReasonInput");
@@ -1215,8 +1361,11 @@ window.renderProducts = function (docs) {
     productsTable.innerHTML = "";
     let lowStockItems = [];
 
-    const admin = isAdmin();
-    const manager = isManagerOrAdmin();
+    const showBuy = can("view.buyPrices");
+    const canEdit = can("products.edit");
+    const canDelete = can("products.delete");
+    const canStock = can("stock.add") || can("stock.reduce");
+    const showActions = canEdit || canDelete || canStock;
 
     // Low stock always looks at every product, not just the ones currently filtered on screen
     (window.productsCache || docs).forEach(d => {
@@ -1226,9 +1375,9 @@ window.renderProducts = function (docs) {
 
     // 1. Build Table Headers Dynamically
     let headerHTML = `<tr><th>Name</th><th>Category</th>`;
-    if (admin) headerHTML += `<th>Buy</th>`;
+    if (showBuy) headerHTML += `<th>Buy</th>`;
     headerHTML += `<th>Sell</th><th>Stock</th><th>Min</th>`;
-    if (manager) headerHTML += `<th class="text-end">Actions</th>`;
+    if (showActions) headerHTML += `<th class="text-end">Actions</th>`;
     headerHTML += `</tr>`;
 
     if (productsHead) productsHead.innerHTML = headerHTML;
@@ -1247,19 +1396,19 @@ window.renderProducts = function (docs) {
 
         let rowHTML = `<tr class="${isLow ? 'table-danger' : ''}"><td data-label="Product" class="fw-semibold">${p.name}${isLow ? ' <span class="low-stock ms-1">Low</span>' : ''}${tots > 0 ? ` <span class="tot-tag" title="${tots} tots per bottle">tots</span>` : ''}</td>
             <td data-label="Category" class="text-muted">${category ? escHtml(category) : '<span class="opacity-50">-</span>'}</td>`;
-        if (admin) {
+        if (showBuy) {
             rowHTML += `<td data-label="Buy">KSh ${parseFloat(p.buyPrice || 0).toFixed(2)}</td>`;
         }
         rowHTML += `<td data-label="Sell">KSh ${parseFloat(p.price || 0).toFixed(2)}${tots > 0 && totPrice > 0 ? `<small class="text-muted d-block">KSh ${totPrice.toFixed(2)} / tot</small>` : ''}</td>
                    <td data-label="Stock"><span class="stock-pill">${window.toMixedFraction(p.stock)}</span>${tots > 0 ? `<small class="text-muted d-block">about ${Math.floor((parseFloat(p.stock) || 0) * tots + 1e-6)} tots</small>` : ''}</td>
                    <td data-label="Min" class="text-muted">${window.toMixedFraction(p.min)}</td>`;
 
-        if (manager) {
+        if (showActions) {
             rowHTML += `
             <td class="text-end text-nowrap">
-                <button class="btn btn-sm btn-soft stockBtn" data-id="${id}" title="${admin ? 'Add or reduce stock' : 'Add stock'}"><i class="fas fa-boxes-packing me-1 text-success"></i>Stock</button>
-                ${admin ? `<button class="btn btn-sm btn-soft editBtn" data-id="${id}" title="Edit product"><i class="fas fa-pen text-primary"></i></button>
-                <button class="btn btn-sm btn-soft delBtn" data-id="${id}" title="Delete product"><i class="fas fa-trash-can text-danger"></i></button>` : ''}
+                ${canStock ? `<button class="btn btn-sm btn-soft stockBtn" data-id="${id}" title="${can("stock.reduce") ? 'Add or reduce stock' : 'Add stock'}"><i class="fas fa-boxes-packing me-1 text-success"></i>Stock</button>` : ''}
+                ${canEdit ? `<button class="btn btn-sm btn-soft editBtn" data-id="${id}" title="Edit product"><i class="fas fa-pen text-primary"></i></button>` : ''}
+                ${canDelete ? `<button class="btn btn-sm btn-soft delBtn" data-id="${id}" title="Delete product"><i class="fas fa-trash-can text-danger"></i></button>` : ''}
             </td>`;
         }
         rowHTML += `</tr>`;
@@ -1267,7 +1416,7 @@ window.renderProducts = function (docs) {
     });
 
     if (!rowsHTML) {
-        const cols = 5 + (admin ? 1 : 0) + (manager ? 1 : 0);
+        const cols = 5 + (showBuy ? 1 : 0) + (showActions ? 1 : 0);
         rowsHTML = `<tr><td colspan="${cols}"><div class="empty-state"><i class="fas fa-wine-bottle"></i>No products found.</div></td></tr>`;
     }
 
@@ -1308,6 +1457,7 @@ window.renderProducts = function (docs) {
 
     document.querySelectorAll(".editBtn").forEach(btn => {
         btn.onclick = () => {
+            if (!can("products.edit")) return denyAccess("edit products");
             editProductId = btn.dataset.id;
             const targetDoc = docs.find(d => d.id === editProductId);
             if (!targetDoc) return;
@@ -1339,6 +1489,7 @@ window.renderProducts = function (docs) {
     // 5. Attach Delete Listeners (with Undo functionality)
     document.querySelectorAll(".delBtn").forEach(btn => {
         btn.onclick = async () => {
+            if (!can("products.delete")) return denyAccess("delete products");
             const id = btn.dataset.id;
             const targetDoc = docs.find(d => d.id === id);
             if (!targetDoc) return;
@@ -1384,7 +1535,7 @@ window.renderProducts = function (docs) {
  * Initializes Products Dashboard & Management Listeners
  */
 window.openAddProductModal = () => {
-    if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
+    if (!can("products.add")) return denyAccess("add products");
     ["prodName", "prodBuyPrice", "prodPrice", "prodStock", "prodMin", "prodCategory", "prodTots", "prodTotPrice"].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.value = "";
@@ -1405,8 +1556,8 @@ function initDashboard() {
     // Add Product Handler
     if (addProductBtn) {
         addProductBtn.onclick = async () => {
-            if (!isAdmin()) {
-                return Swal.fire("Access Denied", "Admins only", "error");
+            if (!can("products.add")) {
+                return denyAccess("add products");
             }
             const prodName = document.getElementById("prodName");
             const prodBuyPrice = document.getElementById("prodBuyPrice");
@@ -1477,6 +1628,7 @@ function initDashboard() {
     if (saveEditBtn) {
         saveEditBtn.onclick = async () => {
             if (!editProductId) return;
+            if (!can("products.edit")) return denyAccess("edit products");
             const editTots = parseFloat(document.getElementById("editProdTots").value) || 0;
             const editTotPrice = parseFloat(document.getElementById("editProdTotPrice").value) || 0;
             if (editTots > 0 && editTotPrice <= 0) {
@@ -1683,7 +1835,7 @@ window.refreshNotificationUI = function () {
                 const qtyClass = parseFloat(qtyAdded) < 0 ? 'text-danger' : 'text-success';
                 const qtySign = parseFloat(qtyAdded) < 0 ? '' : '+';
 
-                const deleteBtn = isAdmin() ? `
+                const deleteBtn = can("notifications.delete") ? `
                     <button class="btn btn-soft btn-sm" onclick="window.deleteNotification('${n.id}', '${n.type || 'restock'}')">
                         <i class="fas fa-trash-can text-danger me-1"></i>Delete
                     </button>` : '';
@@ -1793,7 +1945,7 @@ window.checkAndShowUnreadNotificationPopup = function (force = false) {
  * Deletes a single notification (Admin only)
  */
 window.deleteNotification = async function (notifId, type) {
-    if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
+    if (!can("notifications.delete")) return denyAccess("delete notifications");
 
     const result = await Swal.fire({
         title: "Delete Notification?",
@@ -1839,7 +1991,7 @@ window.deleteNotification = async function (notifId, type) {
  * Clears all notifications (Admin only)
  */
 window.clearAllNotifications = async function () {
-    if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
+    if (!can("notifications.delete")) return denyAccess("clear notifications");
 
     const result = await Swal.fire({
         title: "Clear All Notifications?",
@@ -1972,7 +2124,7 @@ function initLogsListeners() {
         });
     };
 
-    const hideBtnClass = isAdmin() ? '' : 'd-none';
+    const hideBtnClass = can("logs.delete") ? '' : 'd-none';
     const currentStockMap = {};
     window.historicalStockLogCache = window.historicalStockLogCache || {};
 
@@ -2014,7 +2166,7 @@ function initLogsListeners() {
     };
 
     const deleteDateGroupLogs = async (collection, idsJson, dateKey) => {
-        if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
+        if (!can("logs.delete")) return denyAccess("delete log entries");
 
         const ids = JSON.parse(decodeURIComponent(idsJson));
         const result = await Swal.fire({
@@ -2042,7 +2194,7 @@ function initLogsListeners() {
             return;
         }
 
-        const isAdminRole = isAdmin();
+        const isAdminRole = can("logs.delete");
         const dateGroups = {};
 
         snapshot.forEach(doc => {
@@ -2361,6 +2513,7 @@ window.creditPayments = [];
 
 if (addCustomerBtn) {
     addCustomerBtn.onclick = async () => {
+        if (!can("customers.add")) return denyAccess("add customers");
         if (!custName || !custPhone || !custName.value.trim() || !custPhone.value.trim()) {
             return Swal.fire("Missing Info", "Enter both the customer's name and phone number.", "warning");
         }
@@ -2375,77 +2528,83 @@ if (addCustomerBtn) {
     };
 }
 
+function renderCustomersFromSnap(snap) {
+    if (!customersTable || !posCustomer) return;
+    const keepSelected = posCustomer.value;
+    const canDeleteCust = can("customers.delete"), canPay = can("customers.payment");
+    let rowsHTML = "";
+    let totalOwed = 0, debtors = 0;
+    window.customersCache = {};
+    posCustomer.innerHTML = '<option value="">Guest</option>';
+
+    const docs = snap.docs.slice().sort((a, b) => (a.data().name || "").localeCompare(b.data().name || ""));
+    docs.forEach(doc => {
+        const c = doc.data();
+        const bal = Math.round((parseFloat(c.balance) || 0) * 100) / 100;
+        window.customersCache[doc.id] = { id: doc.id, name: c.name, phone: c.phone, balance: bal };
+        if (bal > 0) { totalOwed += bal; debtors++; }
+
+        const actions = `
+            ${bal > 0 && canPay ? `<button class="btn btn-sm btn-custom" onclick="window.openCreditPayment('${doc.id}')" title="Record a payment"><i class="fas fa-hand-holding-dollar me-1"></i>Payment</button>` : ""}
+            <button class="btn btn-sm btn-soft" onclick="window.openCreditStatement('${doc.id}')" title="Statement"><i class="fas fa-file-lines"></i></button>
+            ${canDeleteCust ? `<button class="btn btn-sm btn-soft delCustBtn" data-id="${doc.id}" title="Delete customer"><i class="fas fa-trash-can text-danger"></i></button>` : ""}`;
+
+        rowsHTML += `<tr>
+            <td data-label="Name" class="fw-semibold">${c.name}</td>
+            <td data-label="Phone">${c.phone || ''}</td>
+            <td data-label="Balance" class="text-end fw-bold ${bal > 0 ? 'text-danger' : 'text-muted'}">${bal > 0 ? "KSh " + bal.toLocaleString(undefined, { minimumFractionDigits: 2 }) : "-"}</td>
+            <td class="text-end text-nowrap">${actions}</td>
+        </tr>`;
+
+        const option = document.createElement("option");
+        option.value = doc.id;
+        option.textContent = c.name;
+        posCustomer.appendChild(option);
+    });
+    if (keepSelected && window.customersCache[keepSelected]) posCustomer.value = keepSelected;
+
+    customersTable.innerHTML = rowsHTML || `<tr><td colspan="4"><div class="empty-state"><i class="fas fa-users"></i>No customers registered yet.</div></td></tr>`;
+
+    const summary = document.getElementById("creditSummary");
+    if (summary) {
+        summary.innerHTML = totalOwed > 0
+            ? `<i class="fas fa-book me-2"></i><b>KSh ${totalOwed.toLocaleString(undefined, { minimumFractionDigits: 2 })}</b> owed by ${debtors} customer${debtors === 1 ? "" : "s"}`
+            : `<i class="fas fa-circle-check me-2"></i>No customer owes money`;
+        summary.classList.toggle("owing", totalOwed > 0);
+    }
+
+    if (canDeleteCust) {
+        document.querySelectorAll(".delCustBtn").forEach(btn => {
+            btn.onclick = async () => {
+                const id = btn.dataset.id;
+                const cust = window.customersCache[id];
+                if (cust && cust.balance > 0) {
+                    return Swal.fire("Customer owes money", `${cust.name} still owes KSh ${cust.balance.toLocaleString()}. Record their payment before deleting them.`, "warning");
+                }
+                const result = await Swal.fire({
+                    title: "Delete Customer?",
+                    text: "Are you sure you want to delete this customer record?",
+                    icon: "warning",
+                    showCancelButton: true,
+                    confirmButtonColor: "#d33",
+                    cancelButtonColor: "#6c757d",
+                    confirmButtonText: "Yes, delete customer"
+                });
+                if (result.isConfirmed) {
+                    await window.db.collection("customers").doc(id).delete();
+                    Swal.fire("Deleted!", "Customer record removed.", "success");
+                }
+            };
+        });
+    }
+    const custCountEl = document.getElementById("customerCount");
+    if (custCountEl) custCountEl.textContent = snap.size;
+}
+
 if (customersTable && posCustomer) {
     window.db.collection("customers").onSnapshot(snap => {
-        const keepSelected = posCustomer.value;
-        const admin = isAdmin();
-        let rowsHTML = "";
-        let totalOwed = 0, debtors = 0;
-        window.customersCache = {};
-        posCustomer.innerHTML = '<option value="">Guest</option>';
-
-        const docs = snap.docs.slice().sort((a, b) => (a.data().name || "").localeCompare(b.data().name || ""));
-        docs.forEach(doc => {
-            const c = doc.data();
-            const bal = Math.round((parseFloat(c.balance) || 0) * 100) / 100;
-            window.customersCache[doc.id] = { id: doc.id, name: c.name, phone: c.phone, balance: bal };
-            if (bal > 0) { totalOwed += bal; debtors++; }
-
-            const actions = `
-                ${bal > 0 ? `<button class="btn btn-sm btn-custom" onclick="window.openCreditPayment('${doc.id}')" title="Record a payment"><i class="fas fa-hand-holding-dollar me-1"></i>Payment</button>` : ""}
-                <button class="btn btn-sm btn-soft" onclick="window.openCreditStatement('${doc.id}')" title="Statement"><i class="fas fa-file-lines"></i></button>
-                ${admin ? `<button class="btn btn-sm btn-soft delCustBtn" data-id="${doc.id}" title="Delete customer"><i class="fas fa-trash-can text-danger"></i></button>` : ""}`;
-
-            rowsHTML += `<tr>
-                <td data-label="Name" class="fw-semibold">${c.name}</td>
-                <td data-label="Phone">${c.phone || ''}</td>
-                <td data-label="Balance" class="text-end fw-bold ${bal > 0 ? 'text-danger' : 'text-muted'}">${bal > 0 ? "KSh " + bal.toLocaleString(undefined, { minimumFractionDigits: 2 }) : "-"}</td>
-                <td class="text-end text-nowrap">${actions}</td>
-            </tr>`;
-
-            const option = document.createElement("option");
-            option.value = doc.id;
-            option.textContent = c.name;
-            posCustomer.appendChild(option);
-        });
-        if (keepSelected && window.customersCache[keepSelected]) posCustomer.value = keepSelected;
-
-        customersTable.innerHTML = rowsHTML || `<tr><td colspan="4"><div class="empty-state"><i class="fas fa-users"></i>No customers registered yet.</div></td></tr>`;
-
-        const summary = document.getElementById("creditSummary");
-        if (summary) {
-            summary.innerHTML = totalOwed > 0
-                ? `<i class="fas fa-book me-2"></i><b>KSh ${totalOwed.toLocaleString(undefined, { minimumFractionDigits: 2 })}</b> owed by ${debtors} customer${debtors === 1 ? "" : "s"}`
-                : `<i class="fas fa-circle-check me-2"></i>No customer owes money`;
-            summary.classList.toggle("owing", totalOwed > 0);
-        }
-
-        if (admin) {
-            document.querySelectorAll(".delCustBtn").forEach(btn => {
-                btn.onclick = async () => {
-                    const id = btn.dataset.id;
-                    const cust = window.customersCache[id];
-                    if (cust && cust.balance > 0) {
-                        return Swal.fire("Customer owes money", `${cust.name} still owes KSh ${cust.balance.toLocaleString()}. Record their payment before deleting them.`, "warning");
-                    }
-                    const result = await Swal.fire({
-                        title: "Delete Customer?",
-                        text: "Are you sure you want to delete this customer record?",
-                        icon: "warning",
-                        showCancelButton: true,
-                        confirmButtonColor: "#d33",
-                        cancelButtonColor: "#6c757d",
-                        confirmButtonText: "Yes, delete customer"
-                    });
-                    if (result.isConfirmed) {
-                        await window.db.collection("customers").doc(id).delete();
-                        Swal.fire("Deleted!", "Customer record removed.", "success");
-                    }
-                };
-            });
-        }
-        const custCountEl = document.getElementById("customerCount");
-        if (custCountEl) custCountEl.textContent = snap.size;
+        window.lastCustomersSnap = snap;
+        renderCustomersFromSnap(snap);
     });
 }
 
@@ -2459,6 +2618,7 @@ window.db.collection("credit_payments").orderBy("at", "desc").limit(300).onSnaps
 const creditMoney = (n) => "KSh " + (parseFloat(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 window.openCreditPayment = (id) => {
+    if (!can("customers.payment")) return denyAccess("record customer payments");
     const c = window.customersCache[id];
     if (!c) return;
     window.creditPayCustomerId = id;
@@ -2477,6 +2637,7 @@ window.fillCreditPaymentFull = () => {
 };
 
 window.saveCreditPayment = async () => {
+    if (!can("customers.payment")) return denyAccess("record customer payments");
     const id = window.creditPayCustomerId;
     const c = window.customersCache[id];
     if (!c) return;
@@ -2754,6 +2915,7 @@ if (addToCartBtn) {
 
 if (saveCustomerBtn) {
     saveCustomerBtn.onclick = async () => {
+        if (!can("customers.add")) return denyAccess("add customers");
         const name = document.getElementById("newCustName")?.value;
         const phone = document.getElementById("newCustPhone")?.value;
         if (!name) return Swal.fire("Missing Name", "Enter a customer name.", "warning");
@@ -2814,8 +2976,9 @@ if (checkoutBtn) {
         const creditOpt = methodEl && methodEl.querySelector('option[value="Credit"]');
         if (creditOpt) {
             const registered = !!(posCustEl && posCustEl.value && window.customersCache[posCustEl.value]);
-            creditOpt.disabled = !registered;
-            creditOpt.textContent = registered ? "Credit (customer tab)" : "Credit (register the customer first)";
+            const allowed = can("pos.credit");
+            creditOpt.disabled = !registered || !allowed;
+            creditOpt.textContent = !allowed ? "Credit (not allowed for your role)" : (registered ? "Credit (customer tab)" : "Credit (register the customer first)");
         }
         const creditHintEl = document.getElementById("creditHint");
         if (creditHintEl) creditHintEl.classList.add("d-none");
@@ -2841,6 +3004,9 @@ if (paymentCompleteBtn) {
         // A sale on credit must be linked to a registered customer, so their balance can be tracked
         const isCreditSale = document.getElementById("paymentMethod").value === "Credit";
         const creditCustomerId = document.getElementById("posCustomer").value;
+        if (isCreditSale && !can("pos.credit")) {
+            return denyAccess("sell on credit");
+        }
         if (isCreditSale && (!creditCustomerId || !window.customersCache[creditCustomerId])) {
             return Swal.fire("Choose a customer", "A sale on credit needs a registered customer. Close this window, pick the customer (or add them with +), then try again.", "warning");
         }
@@ -3150,7 +3316,8 @@ window.filterSalesTable = () => {
 
     const limit = window.salesLimit || 25;
     const visible = filtered.slice(0, limit);
-    const admin = isAdmin();
+    const canRemove = can("sales.delete");
+    const canReceipt = can("reports.download");
     const money = (n) => (parseFloat(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
     // Day totals are computed over ALL filtered sales so partially shown days still show the real total
@@ -3192,7 +3359,7 @@ window.filterSalesTable = () => {
                     <span class="sale-qty">${window.toMixedFraction(qtyVal)}</span>
                     <span class="name">${itemLabel(i)}<small class="text-muted d-block">@ KSh ${(parseFloat(i.price) || 0).toLocaleString()}</small></span>
                     <strong>KSh ${money(subtotal)}</strong>
-                    ${admin ? `<button class="btn btn-link p-0 border-0" title="Remove this item" onclick="window.deleteItemFromSale('${s.id}', ${idx})"><i class="fas fa-circle-xmark text-danger"></i></button>` : ''}
+                    ${canRemove ? `<button class="btn btn-link p-0 border-0" title="Remove this item" onclick="window.deleteItemFromSale('${s.id}', ${idx})"><i class="fas fa-circle-xmark text-danger"></i></button>` : ''}
                 </li>`;
         }).join('');
 
@@ -3214,8 +3381,8 @@ window.filterSalesTable = () => {
                     </div>
                     <ul class="sale-items">${itemsHTML}</ul>
                     <div class="sale-actions">
-                        <button class="btn btn-soft btn-sm" onclick="window.downloadSale('${s.id}')"><i class="fas fa-file-pdf text-danger me-1"></i>Receipt</button>
-                        ${admin ? `<button class="btn btn-soft btn-sm" onclick="window.deleteSale('${s.id}')"><i class="fas fa-trash-can text-danger me-1"></i>Delete</button>` : ''}
+                        ${canReceipt ? `<button class="btn btn-soft btn-sm" onclick="window.downloadSale('${s.id}')"><i class="fas fa-file-pdf text-danger me-1"></i>Receipt</button>` : ''}
+                        ${canRemove ? `<button class="btn btn-soft btn-sm" onclick="window.deleteSale('${s.id}')"><i class="fas fa-trash-can text-danger me-1"></i>Delete</button>` : ''}
                     </div>
                 </div>
             </details>`;
@@ -3473,7 +3640,7 @@ function showRestockedAlert(restockedItems, titleText = "Transaction Deleted & S
  * Deletes all sales for a specific historical month (Admin only)
  */
 window.deleteMonthProfit = async (monthKey) => {
-    if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
+    if (!can("sales.deleteBulk")) return denyAccess("delete a whole month of sales");
 
     const salesToDelete = (window.allSales || []).filter(s => {
         const mKey = s.date.toDate().toLocaleString('default', { month: 'long', year: 'numeric' });
@@ -3736,7 +3903,7 @@ function renderGroupedSales(sales, searchFilter = "") {
             `;
         }).join('');
 
-        const adminDeleteDayBtn = isAdmin()
+        const adminDeleteDayBtn = can("sales.deleteBulk")
             ? `<button class="btn btn-sm btn-outline-danger" title="Delete All Sales for ${date}" onclick="window.deleteDay('${date}')"><i class="fas fa-trash-alt me-1"></i>Delete Day</button>`
             : '';
 
@@ -3750,9 +3917,9 @@ function renderGroupedSales(sales, searchFilter = "") {
                         <span class="badge bg-success ms-2 fs-6">Total: KSh ${dayTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </h6>
                     <div class="d-flex gap-2 align-items-center">
-                        <button class="btn btn-sm btn-outline-primary" onclick="window.downloadDailyReport('${date}')">
+                        ${can("reports.download") ? `<button class="btn btn-sm btn-outline-primary" onclick="window.downloadDailyReport('${date}')">
                             <i class="fas fa-file-pdf me-1"></i>PDF Report
-                        </button>
+                        </button>` : ''}
                         ${adminDeleteDayBtn}
                     </div>
                 </div>
@@ -3782,7 +3949,7 @@ function renderGroupedSales(sales, searchFilter = "") {
 
 // Delete Specific Item from a Sale Transaction
 window.deleteItemFromSale = async (saleId, itemIndex) => {
-    if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
+    if (!can("sales.delete")) return denyAccess("delete sales");
 
     const sale = (window.allSales || []).find(s => s.id === saleId);
     if (!sale || !sale.items || !sale.items[itemIndex]) {
@@ -3856,7 +4023,7 @@ window.deleteItemFromSale = async (saleId, itemIndex) => {
 
 // Delete Single Sale Transaction
 window.deleteSale = async (id) => {
-    if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
+    if (!can("sales.delete")) return denyAccess("delete sales");
 
     const sale = (window.allSales || []).find(s => s.id === id);
     if (!sale) return Swal.fire("Error", "Sale transaction not found.", "error");
@@ -3932,7 +4099,7 @@ function reverseCreditForSale(batch, sale, amount) {
 }
 
 window.deleteDay = async (dateStr) => {
-    if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
+    if (!can("sales.deleteBulk")) return denyAccess("delete a whole day of sales");
 
     const salesToDelete = (window.allSales || []).filter(s => s.date.toDate().toLocaleDateString('en-GB') === dateStr);
 
@@ -4084,7 +4251,7 @@ window.renderProfitCardBreakdown = function () {
 
     const fmt = (n) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const currentKey = new Date().toLocaleString('default', { month: 'long', year: 'numeric' });
-    const admin = isAdmin();
+    const admin = can("sales.deleteBulk");
 
     let allRevenue = 0, allProfit = 0;
     sortedMonths.forEach(k => { allRevenue += monthlyProfits[k].revenue; allProfit += monthlyProfits[k].profit; });
@@ -4440,7 +4607,7 @@ if (typeof window.editStaffId === 'undefined') {
  * Opens the staff modal in "add" mode with a clean form
  */
 window.openStaffModal = () => {
-    if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
+    if (!can("staff.manage")) return denyAccess("manage staff");
     window.editStaffId = null;
     ["staffName", "staffEmail", "staffPassword"].forEach(id => {
         const el = document.getElementById(id);
@@ -4450,12 +4617,16 @@ window.openStaffModal = () => {
     if (emailEl) emailEl.disabled = false;
     const roleEl = document.getElementById("staffRole");
     if (roleEl) roleEl.value = "staff";
+    // Only a real admin can create another admin
+    const adminOpt = document.querySelector('#staffRole option[value="admin"]');
+    if (adminOpt) { adminOpt.disabled = !isAdmin(); adminOpt.hidden = !isAdmin(); }
     document.getElementById("staffModalTitle").textContent = "Add Staff Member";
     document.getElementById("addStaffBtn").textContent = "Save";
     bootstrap.Modal.getOrCreateInstance(document.getElementById("staffModal")).show();
 };
 
 window.saveStaffMember = async () => {
+    if (!can("staff.manage")) return denyAccess("manage staff");
     const staffEmailInput = document.getElementById("staffEmail");
     const staffPasswordInput = document.getElementById("staffPassword");
     const staffNameInput = document.getElementById("staffName");
@@ -4473,6 +4644,9 @@ window.saveStaffMember = async () => {
 
     if (!email || !password || !name) {
         return Swal.fire("Missing Details", "Please fill in all staff fields completely.", "warning");
+    }
+    if (role === "admin" && !isAdmin()) {
+        return denyAccess("create or change an administrator");
     }
 
     try {
@@ -4563,6 +4737,8 @@ window.prepareStaffEdit = async (docId) => {
         const doc = await window.db.collection("users").doc(docId).get();
         if (!doc.exists) return;
         const staff = doc.data();
+        if (!can("staff.manage")) return denyAccess("manage staff");
+        if ((staff.role || "staff") === "admin" && !isAdmin()) return denyAccess("change an administrator");
 
         window.editStaffId = docId;
         const sName = document.getElementById("staffName");
@@ -4585,7 +4761,11 @@ window.prepareStaffEdit = async (docId) => {
 };
 
 window.toggleStaffAccess = async (docId, currentStatus) => {
-    if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
+    if (!can("staff.manage")) return denyAccess("manage staff");
+    {
+        const target = await safeGet(window.db.collection("users").doc(docId));
+        if (target && target.exists && (target.data().role || "staff") === "admin" && !isAdmin()) return denyAccess("block or unblock an administrator");
+    }
     try {
         const newStatus = currentStatus === "blocked" ? "active" : "blocked";
         await window.db.collection("users").doc(docId).update({ status: newStatus });
@@ -4596,7 +4776,11 @@ window.toggleStaffAccess = async (docId, currentStatus) => {
 };
 
 window.deleteStaffUser = async (docId) => {
-    if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
+    if (!can("staff.manage")) return denyAccess("manage staff");
+    {
+        const target = await safeGet(window.db.collection("users").doc(docId));
+        if (target && target.exists && (target.data().role || "staff") === "admin" && !isAdmin()) return denyAccess("delete an administrator");
+    }
     try {
         const res = await Swal.fire({
             title: "Remove staff profile?",
@@ -4681,7 +4865,7 @@ window.renderInsights = () => {
     window.insightsNeedsRender = false;
     if (typeof Chart === "undefined") return;
 
-    const admin = isAdmin();
+    const showProfit = can("view.profit");
     const sales = window.allSales || [];
     const costMap = buildCostMap();
     const days = window.insightsRange;
@@ -4766,7 +4950,7 @@ window.renderInsights = () => {
         pointRadius: days <= 14 ? 3 : 0,
         pointHoverRadius: 5
     }];
-    if (admin) {
+    if (showProfit) {
         datasets.push({
             label: "Profit",
             data: profit,
@@ -4786,7 +4970,7 @@ window.renderInsights = () => {
             maintainAspectRatio: false,
             interaction: { mode: "index", intersect: false },
             plugins: {
-                legend: { display: admin, labels: { color: ink, usePointStyle: true, boxWidth: 8 } },
+                legend: { display: showProfit, labels: { color: ink, usePointStyle: true, boxWidth: 8 } },
                 tooltip: { callbacks: { label: (ctx) => ` ${ctx.dataset.label}: ${insightMoney(ctx.parsed.y)}` } }
             },
             scales: baseScales
@@ -4833,12 +5017,12 @@ window.renderInsights = () => {
         }
     });
 
-    if (admin) {
+    if (showProfit) {
         renderProfitAndLoss(sales, costMap, { muted, grid, brand, green, kFormat });
         renderProductProfit(products, days);
-        window.renderBusyTimes({ hourRev, hourOrders, dowRev, dowOrders, dowCount, colors: { muted, grid, brand, green, ink }, kFormat, days });
-        window.renderSmartWarnings();
     }
+    window.renderBusyTimes({ hourRev, hourOrders, dowRev, dowOrders, dowCount, colors: { muted, grid, brand, green, ink }, kFormat, days });
+    window.renderSmartWarnings();
 };
 
 /* ------------------------------------------------------------ Profit & loss */
@@ -4982,13 +5166,14 @@ function computeDaySummary(dateValue) {
 }
 
 window.openCloseDayModal = () => {
+    if (!can("closeday.do")) return denyAccess("close the day");
     document.getElementById("closeDayDate").value = new Date().toLocaleDateString("en-CA");
     document.getElementById("closeDayFloat").value = "";
     document.getElementById("closeDayCounted").value = "";
     document.getElementById("closeDayNotes").value = "";
     window.updateCloseDaySummary();
     // Cashiers count blind: only admins see the sales breakdown, expected cash and the difference
-    document.getElementById("closeDayStaffHint").classList.toggle("d-none", isManagerOrAdmin());
+    document.getElementById("closeDayStaffHint").classList.toggle("d-none", can("closeday.seeResult"));
     bootstrap.Modal.getOrCreateInstance(document.getElementById("closeDayModal")).show();
 };
 
@@ -5034,7 +5219,7 @@ window.updateCloseDaySummary = () => {
     const notice = document.getElementById("closeDayExisting");
     if (existing) {
         notice.classList.remove("d-none");
-        notice.innerHTML = `<i class="fas fa-lock me-1"></i>This day was already closed by <strong>${escHtml(existing.closedBy || "unknown")}</strong>${isAdmin() ? " — saving will replace that record." : ". Only an admin can change it."}`;
+        notice.innerHTML = `<i class="fas fa-lock me-1"></i>This day was already closed by <strong>${escHtml(existing.closedBy || "unknown")}</strong>${can("closeday.replace") ? " — saving will replace that record." : ". You are not allowed to change it."}`;
     } else {
         notice.classList.add("d-none");
     }
@@ -5046,6 +5231,7 @@ window.updateCloseDaySummary = () => {
 });
 
 window.saveDayClosing = async () => {
+    if (!can("closeday.do")) return denyAccess("close the day");
     const dateValue = document.getElementById("closeDayDate").value;
     const countedRaw = document.getElementById("closeDayCounted").value;
     if (!dateValue) return Swal.fire("Pick a date", "Choose the day you are closing.", "warning");
@@ -5063,7 +5249,7 @@ window.saveDayClosing = async () => {
     try {
         const existing = await safeGet(ref);
         if (existing && existing.exists) {
-            if (!isAdmin()) {
+            if (!can("closeday.replace")) {
                 return Swal.fire("Already closed", `This day was already closed by ${existing.data().closedBy || "someone"}. Ask an admin to change it.`, "info");
             }
             const ok = await Swal.fire({
@@ -5110,7 +5296,7 @@ window.saveDayClosing = async () => {
         const msg = difference === 0 ? "Cash balanced perfectly."
             : difference < 0 ? `Cash is short by ${insightMoney(Math.abs(difference))}.`
             : `Cash is over by ${insightMoney(difference)}.`;
-        if (isManagerOrAdmin()) {
+        if (can("closeday.seeResult")) {
             Swal.fire({
                 icon: difference === 0 ? "success" : "warning",
                 title: "Day closed",
@@ -5139,7 +5325,7 @@ window.renderDayClosings = () => {
         return;
     }
 
-    const admin = isAdmin();
+    const admin = can("closeday.delete");
     body.innerHTML = list.map(c => {
         const diff = Math.round((parseFloat(c.difference) || 0) * 100) / 100;
         const pill = diff === 0 ? `<span class="cd-pill ok">Balanced</span>`
@@ -5160,7 +5346,7 @@ window.renderDayClosings = () => {
 };
 
 window.deleteDayClosing = async (id) => {
-    if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
+    if (!can("closeday.delete")) return denyAccess("delete closings");
     const res = await Swal.fire({
         title: "Delete this closing?",
         text: "The day will be open again and can be closed once more.",
@@ -5400,7 +5586,7 @@ function computeReorderList(coverDays) {
 }
 
 window.openReorderModal = () => {
-    if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
+    if (!can("requisition.use")) return denyAccess("use reorder suggestions");
     document.getElementById("reorderDays").value = "14";
     window.renderReorderList();
     bootstrap.Modal.getOrCreateInstance(document.getElementById("reorderModal")).show();
@@ -5480,7 +5666,8 @@ window.addReorderToRequisition = () => {
 window.stockTakes = [];
 
 window.openStockTakeModal = () => {
-    const admin = isManagerOrAdmin();   // managers see the system stock while counting; staff count blind
+    if (!can("stocktake.count")) return denyAccess("do a stock take");
+    const admin = can("stocktake.seeSystem");   // off = they count blind
     const docs = (window.productsCache || []).slice().sort((a, b) => (a.data().name || "").localeCompare(b.data().name || ""));
 
     document.getElementById("stSystemHead").classList.toggle("d-none", !admin);
@@ -5578,7 +5765,7 @@ window.saveStockTake = async () => {
             );
         } catch (alertErr) { console.warn("Stock take alert failed:", alertErr); }
 
-        if (isAdmin()) {
+        if (can("stocktake.history")) {
             const res = await Swal.fire({
                 title: "Stock count saved",
                 html: short.length || over.length
@@ -5590,7 +5777,7 @@ window.saveStockTake = async () => {
                 cancelButtonText: "Close"
             });
             if (res.isConfirmed) window.openStockTakeHistory();
-        } else if (isManager()) {
+        } else if (can("stocktake.seeSystem")) {
             Swal.fire({
                 icon: short.length || over.length ? "warning" : "success",
                 title: "Count submitted",
@@ -5615,7 +5802,7 @@ window.db.collection("stock_takes").orderBy("takenAt", "desc").limit(30).onSnaps
 }, err => console.warn("Stock takes listener:", err));
 
 window.openStockTakeHistory = () => {
-    if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
+    if (!can("stocktake.history")) return denyAccess("see stock count results");
     renderStockTakeHistory();
     bootstrap.Modal.getOrCreateInstance(document.getElementById("stockTakeHistoryModal")).show();
 };
@@ -5666,8 +5853,8 @@ function renderStockTakeHistory() {
                     </div></div>` : ""}
                     <div class="small text-muted mt-2">${matched} product${matched === 1 ? "" : "s"} matched exactly.</div>
                     <div class="d-flex gap-2 justify-content-end flex-wrap mt-3">
-                        ${!t.applied && diffs.length ? `<button class="btn btn-custom btn-sm" onclick="window.applyStockTake('${t.id}')"><i class="fas fa-check me-1"></i>Update stock to match this count</button>` : ""}
-                        <button class="btn btn-soft btn-sm" onclick="window.deleteStockTake('${t.id}')"><i class="fas fa-trash-can text-danger me-1"></i>Delete</button>
+                        ${can("stocktake.apply") && !t.applied && diffs.length ? `<button class="btn btn-custom btn-sm" onclick="window.applyStockTake('${t.id}')"><i class="fas fa-check me-1"></i>Update stock to match this count</button>` : ""}
+                        ${can("stocktake.apply") ? `<button class="btn btn-soft btn-sm" onclick="window.deleteStockTake('${t.id}')"><i class="fas fa-trash-can text-danger me-1"></i>Delete</button>` : ""}
                     </div>
                 </div>
             </details>`;
@@ -5675,7 +5862,7 @@ function renderStockTakeHistory() {
 }
 
 window.applyStockTake = async (id) => {
-    if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
+    if (!can("stocktake.apply")) return denyAccess("apply stock counts");
     const t = window.stockTakes.find(x => x.id === id);
     if (!t) return;
 
@@ -5723,7 +5910,7 @@ window.applyStockTake = async (id) => {
 };
 
 window.deleteStockTake = async (id) => {
-    if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
+    if (!can("stocktake.apply")) return denyAccess("delete stock counts");
     const res = await Swal.fire({ title: "Delete this stock count?", text: "Stock levels are not changed.", icon: "warning", showCancelButton: true, confirmButtonColor: "#d33", confirmButtonText: "Yes, delete" });
     if (!res.isConfirmed) return;
     try { await window.db.collection("stock_takes").doc(id).delete(); } catch (err) { Swal.fire("Error", err.message, "error"); }
@@ -5811,7 +5998,7 @@ window.setProductCategory = (i) => {
 };
 
 window.openCategoriesModal = () => {
-    if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
+    if (!can("categories.manage")) return denyAccess("manage categories");
     const docs = (window.productsCache || []).slice().sort((a, b) => (a.data().name || "").localeCompare(b.data().name || ""));
     document.getElementById("catBody").innerHTML = docs.map(d => {
         const p = d.data();
@@ -5849,7 +6036,7 @@ window.suggestAllCategories = () => {
 };
 
 window.saveCategories = async () => {
-    if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
+    if (!can("categories.manage")) return denyAccess("manage categories");
     const changed = [...document.querySelectorAll("#catBody .cat-input")]
         .filter(i => i.value.trim() !== (i.dataset.original || ""))
         .map(i => ({ id: i.dataset.id, category: i.value.trim() }));
@@ -6281,6 +6468,241 @@ window.startSmartWarningTimer = () => {
 
 
 /* ==========================================================================
+   SECTION 12F: ROLES & PERMISSIONS EDITOR (pop-up window opened from the Staff tab, admin only)
+   One role and one group of permissions are shown at a time, so there is no long list to scroll.
+   ========================================================================== */
+
+window.permDraft = null;       // the ticks being edited (not saved until the admin presses Save)
+window.permDirty = false;
+window.permRole = "staff";     // which role is being edited: "staff" | "manager"
+window.permGroup = PERMISSION_GROUPS[0].id;
+
+const PERM_TOTAL = PERMISSION_GROUPS.reduce((n, g) => n + g.items.length, 0);
+const permRoleLabel = (r) => (r === "manager" ? "Manager" : "Staff");
+
+function effectivePermissions() {
+    const out = { staff: {}, manager: {} };
+    ["staff", "manager"].forEach(role => {
+        const custom = (window.permissions && window.permissions[role]) || {};
+        PERMISSION_GROUPS.forEach(g => g.items.forEach(i => {
+            out[role][i.key] = custom[i.key] !== undefined ? !!custom[i.key] : !!PERMISSION_DEFAULTS[role][i.key];
+        }));
+    });
+    return out;
+}
+
+const permCountAllowed = (map, items) => items.filter(i => map[i.key]).length;
+
+function setPermDirty(dirty) {
+    window.permDirty = dirty;
+    const badge = document.getElementById("permDirty");
+    if (badge) badge.classList.toggle("d-none", !dirty);
+    const save = document.getElementById("permSaveBtn");
+    if (save) save.disabled = !dirty;
+}
+
+/**
+ * Role tabs, group pills and the button labels (cheap to redraw whenever a switch is flipped)
+ */
+function renderPermHeader() {
+    if (!window.permDraft) return;
+    const role = window.permRole;
+    const d = window.permDraft;
+    const searching = !!(document.getElementById("permSearch") || {}).value;
+
+    const tabs = document.getElementById("permRoleTabs");
+    if (tabs) {
+        tabs.innerHTML = ["staff", "manager"].map(r => {
+            const n = permCountAllowed(d[r], PERMISSION_GROUPS.flatMap(g => g.items));
+            return `<button type="button" class="perm-roletab ${r === role ? "active" : ""}" onclick="window.setPermRole('${r}')">
+                <span class="perm-roletab-name"><i class="fas ${r === "manager" ? "fa-user-tie" : "fa-user"} me-2"></i>${permRoleLabel(r)}</span>
+                <small>${n} of ${PERM_TOTAL} allowed</small></button>`;
+        }).join("");
+    }
+
+    const pills = document.getElementById("permGroupPills");
+    if (pills) {
+        pills.classList.toggle("d-none", searching);
+        pills.innerHTML = PERMISSION_GROUPS.map(g => {
+            const n = permCountAllowed(d[role], g.items);
+            return `<button type="button" class="subtab ${g.id === window.permGroup ? "active" : ""}" onclick="window.setPermGroupView('${g.id}')">
+                <i class="fas ${g.icon}"></i>${g.title}<b class="subtab-count">${n}/${g.items.length}</b></button>`;
+        }).join("");
+    }
+
+    const reset = document.getElementById("permResetBtn");
+    if (reset) reset.innerHTML = `<i class="fas fa-rotate-left me-1"></i>Reset ${permRoleLabel(role)}`;
+}
+
+function permItemHTML(i, checked, groupTitle) {
+    return `
+        <label class="perm-item">
+            <span class="perm-item-text">
+                <span class="perm-label">${i.label}${i.risk ? ' <i class="fas fa-triangle-exclamation perm-risk" title="Think carefully before allowing this"></i>' : ""}${groupTitle ? ` <span class="perm-grouptag">${groupTitle}</span>` : ""}</span>
+                <span class="perm-hint">${i.hint}</span>
+            </span>
+            <span class="form-check form-switch m-0"><input class="form-check-input perm-check" type="checkbox" role="switch" data-key="${i.key}" ${checked ? "checked" : ""}></span>
+        </label>`;
+}
+
+window.renderPermissionEditor = () => {
+    const list = document.getElementById("permList");
+    if (!list) return;
+    if (!window.permDraft) window.permDraft = effectivePermissions();
+
+    const d = window.permDraft[window.permRole];
+    const term = String((document.getElementById("permSearch") || {}).value || "").trim().toLowerCase();
+
+    if (term) {
+        const matches = [];
+        PERMISSION_GROUPS.forEach(g => g.items.forEach(i => {
+            if ((i.label + " " + i.hint + " " + g.title).toLowerCase().includes(term)) matches.push({ i, g });
+        }));
+        list.innerHTML = matches.length
+            ? `<div class="perm-found">${matches.length} permission${matches.length === 1 ? "" : "s"} found</div>` + matches.map(m => permItemHTML(m.i, d[m.i.key], m.g.title)).join("")
+            : `<div class="empty-state"><i class="fas fa-magnifying-glass"></i>Nothing matches "${escHtml(term)}".</div>`;
+    } else {
+        const g = PERMISSION_GROUPS.find(x => x.id === window.permGroup) || PERMISSION_GROUPS[0];
+        list.innerHTML = `
+            <div class="perm-groupbar">
+                <span class="perm-groupbar-title"><i class="fas ${g.icon} me-2"></i>${g.title}</span>
+                <span>
+                    <button type="button" class="perm-mini" onclick="window.setPermGroup('${g.id}','${window.permRole}',true)">Allow all</button>
+                    <button type="button" class="perm-mini" onclick="window.setPermGroup('${g.id}','${window.permRole}',false)">Clear all</button>
+                </span>
+            </div>` + g.items.map(i => permItemHTML(i, d[i.key], "")).join("");
+    }
+    renderPermHeader();
+    setPermDirty(window.permDirty);
+};
+
+(function bindPermissionEditor() {
+    const list = document.getElementById("permList");
+    if (!list) return;
+    list.addEventListener("change", (e) => {
+        const t = e.target;
+        if (t && t.classList && t.classList.contains("perm-check")) window.onPermToggle(t.dataset.key, t.checked);
+    });
+})();
+
+window.onPermToggle = (key, checked) => {
+    window.permDraft[window.permRole][key] = checked;
+    setPermDirty(true);
+    renderPermHeader();
+};
+
+window.setPermRole = (role) => {
+    window.permRole = role;
+    window.renderPermissionEditor();
+};
+
+window.setPermGroupView = (groupId) => {
+    window.permGroup = groupId;
+    const search = document.getElementById("permSearch");
+    if (search) search.value = "";
+    window.renderPermissionEditor();
+};
+
+window.setPermGroup = (groupId, role, value) => {
+    const group = PERMISSION_GROUPS.find(g => g.id === groupId);
+    if (!group || !window.permDraft) return;
+    group.items.forEach(i => { window.permDraft[role][i.key] = value; });
+    setPermDirty(true);
+    window.renderPermissionEditor();
+};
+
+/**
+ * Smoothly scrolls so the top of an element sits just under the sticky top bar
+ */
+function scrollToView(el) {
+    if (!el) return;
+    const bar = document.querySelector(".topbar");
+    const offset = (bar ? bar.offsetHeight : 0) + 12;
+    const y = el.getBoundingClientRect().top + window.scrollY - offset;
+    window.scrollTo({ top: Math.max(0, y), behavior: "smooth" });
+}
+
+window.openPermissionsView = () => {
+    if (!isAdmin()) return denyAccess("change permissions");
+    window.permDraft = effectivePermissions();
+    window.permRole = "staff";
+    window.permGroup = PERMISSION_GROUPS[0].id;
+    const search = document.getElementById("permSearch");
+    if (search) search.value = "";
+    setPermDirty(false);
+    window.renderPermissionEditor();
+    document.getElementById("staffMainView").classList.add("d-none");
+    document.getElementById("permView").classList.remove("d-none");
+    scrollToView(document.getElementById("permView"));
+};
+
+window.closePermissionsView = async (force) => {
+    if (window.permDirty && !force) {
+        const res = await Swal.fire({
+            title: "Leave without saving?",
+            text: "You have changes that are not saved yet.",
+            icon: "warning",
+            showCancelButton: true,
+            confirmButtonText: "Leave without saving",
+            cancelButtonText: "Keep editing"
+        });
+        if (!res.isConfirmed) return;
+    }
+    window.permDirty = false;
+    window.permDraft = null;
+    window.renderPermissionEditor();
+    document.getElementById("permView").classList.add("d-none");
+    document.getElementById("staffMainView").classList.remove("d-none");
+    scrollToView(document.getElementById("staffMainView"));
+};
+
+window.resetPermissions = async (role) => {
+    const res = await Swal.fire({
+        title: `Reset ${permRoleLabel(role)} permissions?`,
+        text: "Every switch for this role goes back to the standard setting. Nothing is saved until you press Save.",
+        icon: "question",
+        showCancelButton: true,
+        confirmButtonText: "Yes, reset"
+    });
+    if (!res.isConfirmed) return;
+    window.permDraft[role] = Object.assign({}, PERMISSION_DEFAULTS[role]);
+    setPermDirty(true);
+    window.renderPermissionEditor();
+};
+
+window.discardPermissionChanges = () => {
+    window.permDraft = effectivePermissions();
+    setPermDirty(false);
+    window.renderPermissionEditor();
+};
+
+window.savePermissions = async () => {
+    if (!isAdmin()) return denyAccess("change permissions");
+    if (!window.permDraft) return;
+    try {
+        await window.db.collection("settings").doc("permissions").set({
+            staff: window.permDraft.staff,
+            manager: window.permDraft.manager,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            updatedBy: getCurrentUserEmail() || "admin"
+        });
+        setPermDirty(false);
+        Swal.fire({ icon: "success", title: "Permissions saved", text: "The changes apply straight away to everyone who is logged in.", timer: 2400, showConfirmButton: false });
+    } catch (err) {
+        Swal.fire("Could not save", err.message + " (If this says permission denied, allow write access to the 'settings' collection in your Firestore rules.)", "error");
+    }
+};
+
+// When the saved ticks change elsewhere, refresh unless the admin is in the middle of editing
+window.onPermissionsChanged = () => {
+    if (!window.permDirty) window.permDraft = null;
+    window.renderPermissionEditor();
+};
+
+window.renderPermissionEditor();
+
+
+/* ==========================================================================
    SECTION 13: UI NAVIGATION & SCROLL HELPERS
    ========================================================================== */
 
@@ -6454,7 +6876,7 @@ window.toggleAlertChannel = () => {
 };
 
 window.openAlertsModal = () => {
-    if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
+    if (!can("alerts.manage")) return denyAccess("change alert settings");
     const c = window.alertConfig || {};
     const useTg = c.useTelegram !== undefined ? c.useTelegram : c.channel !== "whatsapp";
     const useWa = c.useWhatsApp !== undefined ? c.useWhatsApp : c.channel === "whatsapp";
@@ -6512,7 +6934,7 @@ function alertFormProblems(f) {
 }
 
 window.saveAlertSettings = async () => {
-    if (!isAdmin()) return Swal.fire("Access Denied", "Admins only", "error");
+    if (!can("alerts.manage")) return denyAccess("change alert settings");
 
     const f = readAlertForm();
     if (f.enabled) {
@@ -6603,6 +7025,14 @@ window.findTelegramChatId = async () => {
  * Items marked admin:true are only shown to admins.
  */
 const APP_RELEASES = [
+    {
+        id: "2026.10.53",
+        date: "25 Oct 2026",
+        title: "Choose what each role can do",
+        items: [
+            { icon: "fa-user-shield", admin: true, text: "Roles and permissions: in the Staff tab you can now tick exactly what Staff and Managers are allowed to see and do, from adding products to deleting sales. Changes apply straight away to everyone who is logged in." }
+        ]
+    },
     {
         id: "2026.10.42",
         date: "25 Oct 2026",
