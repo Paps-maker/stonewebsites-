@@ -17,6 +17,9 @@
    SECTION 12B: INSIGHTS (CHARTS), PROFIT & LOSS AND DAY CLOSING
    SECTION 12E: CATEGORIES, BUSY TIMES AND SMART WARNINGS
    SECTION 12F: ROLES & PERMISSIONS EDITOR (permission list and can() are near the top)
+   SECTION 12G: SUPPLIERS & DELIVERIES, DEBT REMINDERS, BARCODE SCANNING
+   SECTION 12H: TILL PRICE CHANGES & DISCOUNTS, REFUNDS AND THE AUDIT TRAIL
+   SECTION 12I: WORK LOCATION (where staff may clock in from)
    SECTION 13 : UI NAVIGATION & SCROLL HELPERS
    ========================================================================== */
 
@@ -194,6 +197,33 @@ function itemLabel(item) {
     return item.unit === "tot" ? `${item.name} (tot)` : item.name;
 }
 
+const round2 = (n) => Math.round((parseFloat(n) || 0) * 100) / 100;
+
+/**
+ * Writes one line to the audit trail (who did what, and when). Never blocks or breaks the action it records.
+ * category: price | refund | delete | stock | money | people.  opts: { amount, flag, ref, alert }
+ */
+function logAudit(category, action, title, detail, opts) {
+    try {
+        const o = opts || {};
+        const entry = {
+            category, action, title,
+            detail: detail || "",
+            by: (window.auth && window.auth.currentUser && window.auth.currentUser.email) || window.loggedStaffEmail || window.currentUserEmail || "unknown",
+            role: (window.currentRole || "staff").toString().toLowerCase(),
+            at: new Date()
+        };
+        if (o.amount !== undefined) entry.amount = round2(o.amount);
+        if (o.flag) entry.flag = true;
+        if (o.ref) entry.ref = o.ref;
+        const p = window.db.collection("audit").add(entry);
+        if (p && p.catch) p.catch(e => console.warn("Audit log not saved:", e && e.message));
+        if (o.alert && typeof window.notifyAudit === "function") window.notifyAudit(title, detail, entry.by);
+    } catch (e) {
+        console.warn("Audit log failed:", e);
+    }
+}
+
 
 /* ==========================================================================
    PERMISSIONS
@@ -233,9 +263,21 @@ const PERMISSION_GROUPS = [
         ]
     },
     {
+        id: "suppliers", title: "Suppliers & deliveries", icon: "fa-truck", items: [
+            { key: "suppliers.view", label: "See the Suppliers tab", hint: "Suppliers, deliveries, what you owe and cost changes", staff: false, manager: false },
+            { key: "suppliers.manage", label: "Add and edit suppliers", hint: "Names, phone numbers and notes", staff: false, manager: false },
+            { key: "deliveries.record", label: "Record deliveries", hint: "Adds stock and updates product cost prices", staff: false, manager: false, risk: true },
+            { key: "suppliers.pay", label: "Record payments to suppliers", hint: "Reduces what you owe them", staff: false, manager: false, risk: true },
+            { key: "suppliers.delete", label: "Delete suppliers or void deliveries", hint: "Voiding a delivery takes its stock off again", staff: false, manager: false, risk: true }
+        ]
+    },
+    {
         id: "sales", title: "Sales & POS", icon: "fa-cash-register", items: [
             { key: "pos.sell", label: "Make sales (POS)", hint: "Open the POS tab and check out", staff: true, manager: true },
             { key: "pos.credit", label: "Sell on credit", hint: "Put a sale on a customer's tab", staff: true, manager: true },
+            { key: "pos.discount", label: "Give discounts at the till", hint: "Take an amount or a percentage off a sale. The reason and who did it are always recorded.", staff: false, manager: true, risk: true },
+            { key: "pos.priceoverride", label: "Change an item's price at the till", hint: "Sell an item above or below its listed price. The reason and who did it are always recorded.", staff: false, manager: true, risk: true },
+            { key: "pos.refund", label: "Refund or take back items", hint: "Reverse part or all of a sale. Stock can go back on the shelf.", staff: false, manager: true, risk: true },
             { key: "sales.view", label: "See the Sales tab", hint: "Sales list and daily products sold", staff: true, manager: true },
             { key: "sales.delete", label: "Delete a sale or an item in a sale", hint: "Can also put the stock back", staff: false, manager: false, risk: true },
             { key: "sales.deleteBulk", label: "Delete a whole day or month of sales", hint: "Removes many sales at once", staff: false, manager: false, risk: true }
@@ -255,6 +297,7 @@ const PERMISSION_GROUPS = [
             { key: "customers.view", label: "See the Customers tab", hint: "Customers, balances and statements", staff: true, manager: true },
             { key: "customers.add", label: "Add customers", hint: "Also the quick add button in POS", staff: true, manager: true },
             { key: "customers.payment", label: "Record customer payments", hint: "Money received against a tab", staff: true, manager: true },
+            { key: "customers.remind", label: "Send debt reminders", hint: "WhatsApp or SMS to customers who owe money", staff: false, manager: true },
             { key: "customers.delete", label: "Delete customers", hint: "Customers who owe money cannot be deleted", staff: false, manager: false, risk: true }
         ]
     },
@@ -262,6 +305,8 @@ const PERMISSION_GROUPS = [
         id: "attendance", title: "Attendance", icon: "fa-user-clock", items: [
             { key: "attendance.clock", label: "Use Clock In & Out", hint: "Clock in and out and see their own records", staff: true, manager: true },
             { key: "attendance.viewAll", label: "See everyone's attendance", hint: "All staff records, not just their own", staff: false, manager: false },
+            { key: "attendance.location", label: "Set the work location", hint: "Choose where staff are allowed to clock in from (Google Maps pin) and how close they must be", staff: false, manager: false, risk: true },
+            { key: "attendance.anywhere", label: "Clock in from anywhere", hint: "Skips the location check. The clock in is marked 'off-site' so you can see it.", staff: false, manager: false, risk: true },
             { key: "attendance.export", label: "Download the attendance report", hint: "PDF of the records they can see", staff: false, manager: false },
             { key: "attendance.delete", label: "Delete attendance records", hint: "Remove a clock in or out", staff: false, manager: false, risk: true }
         ]
@@ -275,6 +320,8 @@ const PERMISSION_GROUPS = [
     {
         id: "admin", title: "Administration", icon: "fa-user-shield", items: [
             { key: "staff.manage", label: "Manage staff accounts", hint: "Add, edit, block or delete staff and managers. They can never create or change an admin, or change permissions.", staff: false, manager: false, risk: true },
+            { key: "audit.delete", label: "Delete audit trail entries", hint: "Remove single entries or clear old ones. A note that it was done is always kept.", staff: false, manager: false, risk: true },
+            { key: "audit.view", label: "See the Audit trail", hint: "Who changed prices, gave discounts, refunded or deleted records, and when", staff: false, manager: false },
             { key: "alerts.manage", label: "Change phone alert settings", hint: "Telegram, WhatsApp and email alerts (holds secret keys)", staff: false, manager: false, risk: true }
         ]
     }
@@ -325,6 +372,9 @@ function refreshForPermissions() {
     if (typeof window.renderProfitCardBreakdown === "function") window.renderProfitCardBreakdown();
     if (typeof window.refreshRestockLogTables === "function") window.refreshRestockLogTables();
     if (typeof window.renderDayClosings === "function") window.renderDayClosings();
+    if (typeof window.renderSuppliers === "function") window.renderSuppliers();
+    if (typeof window.startAuditListener === "function") { window.startAuditListener(); window.renderAudit(); }
+    if (typeof renderCart === "function") renderCart();
     if (typeof window.renderInsights === "function") window.renderInsights();
     if (typeof window.refreshNotificationUI === "function") window.refreshNotificationUI();
     if (window.lastCustomersSnap && typeof renderCustomersFromSnap === "function") renderCustomersFromSnap(window.lastCustomersSnap);
@@ -758,38 +808,32 @@ if (loginBtn) {
                         allowEscapeKey: false,
                         showLoaderOnConfirm: true,
                         preConfirm: async () => {
-                            const position = await new Promise((resolve) => {
-                                navigator.geolocation.getCurrentPosition(
-                                    (pos) => resolve({ success: true, coords: pos.coords }),
-                                    (err) => resolve({ success: false, error: err }),
-                                    { enableHighAccuracy: true }
-                                );
-                            });
-
-                            if (!position.success) {
-                                Swal.showValidationMessage("Location Required: Please enable GPS/location services.");
-                                return false;
-                            }
-
-                            const { latitude, longitude } = position.coords;
-                            const distance = Math.sqrt(
-                                Math.pow(latitude - OFFICE_LAT, 2) +
-                                Math.pow(longitude - OFFICE_LON, 2)
-                            );
-
-                            if (distance > MAX_DISTANCE) {
-                                Swal.showValidationMessage("Access Denied: You are too far from the workplace.");
-                                return false;
+                            // The admin can switch the location check off, or add several workplaces
+                            const cfg = await loadWorkplaceConfig();
+                            let coords = null;
+                            let verdict = { ok: true };
+                            if (cfg.enabled) {
+                                const position = await getPositionOnce();
+                                if (!position.success) {
+                                    Swal.showValidationMessage("Location Required: Please enable GPS/location services.");
+                                    return false;
+                                }
+                                coords = position.coords;
+                                verdict = await checkWorkplace(coords);
+                                if (!verdict.ok) {
+                                    Swal.showValidationMessage("Access Denied: " + verdict.message);
+                                    return false;
+                                }
                             }
 
                             try {
-                                await writeWithGrace(window.db.collection("attendance").add({
+                                await writeWithGrace(window.db.collection("attendance").add(Object.assign({
                                     staffEmail: emailVal,
                                     date: today,
                                     clockIn: firebase.firestore.FieldValue.serverTimestamp(),
                                     clockOut: null,
-                                    location: { lat: latitude, lon: longitude }
-                                }));
+                                    location: coords ? { lat: coords.latitude, lon: coords.longitude } : null
+                                }, attendanceExtras(verdict))));
                                 return true;
                             } catch (err) {
                                 Swal.showValidationMessage(`Database error: ${err.message}`);
@@ -895,11 +939,93 @@ window.auth.onAuthStateChanged(async (user) => {
    SECTION 5: ATTENDANCE & GEOLOCATION TRACKING
    ========================================================================== */
 
+// The built-in workplace. It is used until the admin saves their own in the "Work location" window.
 const OFFICE_LAT = -1.533134;
-
 const OFFICE_LON = 37.131476;
+const DEFAULT_RADIUS_M = 10000;     // the old fixed limit (0.09 degrees) works out to about 10 km
 
-const MAX_DISTANCE = 0.090;
+const DEFAULT_WORKPLACE = () => ({ enabled: true, locations: [{ name: "Workplace", lat: OFFICE_LAT, lon: OFFICE_LON, radius: DEFAULT_RADIUS_M, active: true }] });
+
+// The admin's saved setting (settings/workplace). null until it has loaded.
+window.workplaceConfig = null;
+
+function normalizeWorkplace(d) {
+    const data = d || {};
+    const locations = (Array.isArray(data.locations) ? data.locations : [])
+        .map(l => ({ name: String((l && l.name) || "Workplace"), lat: Number(l && l.lat), lon: Number(l && l.lon), radius: Math.max(10, Number(l && l.radius) || 100), active: !(l && l.active === false) }))
+        .filter(l => isFinite(l.lat) && isFinite(l.lon) && Math.abs(l.lat) <= 90 && Math.abs(l.lon) <= 180);
+    const enabled = data.enabled !== false;
+    // With the check on, at least one place must be ticked, otherwise the built-in one is used
+    const fixed = locations.some(l => l.active) || !enabled ? locations : (locations.length ? locations.map(l => Object.assign(l, { active: true })) : DEFAULT_WORKPLACE().locations);
+    return { enabled, locations: fixed };
+}
+
+window.db.collection("settings").doc("workplace").onSnapshot(doc => {
+    window.workplaceConfig = doc.exists ? normalizeWorkplace(doc.data()) : DEFAULT_WORKPLACE();
+    if (typeof window.onWorkplaceChanged === "function") window.onWorkplaceChanged();
+}, err => console.warn("Workplace listener:", err));
+
+async function loadWorkplaceConfig() {
+    if (window.workplaceConfig) return window.workplaceConfig;
+    const snap = await safeGet(window.db.collection("settings").doc("workplace"));
+    window.workplaceConfig = snap && snap.exists ? normalizeWorkplace(snap.data()) : DEFAULT_WORKPLACE();
+    return window.workplaceConfig;
+}
+
+/** Straight-line distance between two GPS points, in metres */
+function distanceMeters(lat1, lon1, lat2, lon2) {
+    const rad = (d) => d * Math.PI / 180;
+    const a = Math.sin(rad(lat2 - lat1) / 2) ** 2 + Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(rad(lon2 - lon1) / 2) ** 2;
+    return 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function formatDistance(m) {
+    return m >= 1000 ? `${(m / 1000).toFixed(m >= 10000 ? 0 : 1)} km` : `${Math.round(m)} m`;
+}
+
+function getPositionOnce() {
+    return new Promise((resolve) => {
+        if (!navigator.geolocation) return resolve({ success: false, error: { message: "no GPS" } });
+        navigator.geolocation.getCurrentPosition(
+            (pos) => resolve({ success: true, coords: pos.coords }),
+            (err) => resolve({ success: false, error: err }),
+            { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
+        );
+    });
+}
+
+/**
+ * Is this GPS position at the workplace? Uses the admin's saved locations (any one of them is enough).
+ * A weak GPS signal gets up to 50 m of benefit of the doubt.
+ * People with the "clock in from anywhere" permission are let in but marked as off-site.
+ * Returns { ok, required, offSite, distance, place, message }
+ */
+async function checkWorkplace(coords) {
+    const cfg = await loadWorkplaceConfig();
+    const places = cfg.locations.filter(l => l.active !== false);
+    if (!cfg.enabled || !places.length) return { ok: true, required: false };
+
+    let best = null;
+    places.forEach(l => {
+        const d = distanceMeters(coords.latitude, coords.longitude, l.lat, l.lon);
+        if (!best || d - l.radius < best.d - best.l.radius) best = { l, d };
+    });
+    const credit = Math.min(Math.max(parseFloat(coords.accuracy) || 0, 0), 50);
+    const result = { required: true, distance: Math.round(best.d), place: best.l.name };
+    if (best.d - credit <= best.l.radius) return Object.assign({ ok: true }, result);
+    if (can("attendance.anywhere")) return Object.assign({ ok: true, offSite: true }, result);
+    return Object.assign({
+        ok: false,
+        message: `You are about ${formatDistance(best.d)} from ${best.l.name}. You must be within ${formatDistance(best.l.radius)} to clock in.`
+    }, result);
+}
+
+/** Extra details saved with a clock in */
+function attendanceExtras(verdict) {
+    return Object.assign({},
+        verdict && verdict.place ? { workplace: verdict.place, distanceM: verdict.distance } : {},
+        verdict && verdict.offSite ? { offSite: true } : {});
+}
 
 /**
  * Checks the staff member's latest shift; if it was on an earlier day and never clocked out,
@@ -995,7 +1121,7 @@ function startAttendanceRealtimeListener() {
                     <tr>
                         <td data-label="Date">${a.date}</td>
                         ${seeAll ? `<td data-label="Staff">${a.staffEmail}</td>` : ""}
-                        <td data-label="In">${a.clockIn.toDate().toLocaleTimeString()}</td>
+                        <td data-label="In">${a.clockIn.toDate().toLocaleTimeString()}${a.offSite ? ` <span class="badge text-bg-warning" title="Clocked in away from the workplace${a.distanceM ? " (" + formatDistance(a.distanceM) + " from " + escHtml(a.workplace || "it") + ")" : ""}">off-site</span>` : ""}</td>
                         <td data-label="Out">${a.clockOut ? a.clockOut.toDate().toLocaleTimeString() + (a.clockOutManual ? ' <span class="badge text-bg-light border" title="Entered manually by staff on next login">manual</span>' : '') : "Ongoing"}</td>
                         ${canDelete ? `
                             <td class="text-end">
@@ -1027,47 +1153,40 @@ window.clockIn = async () => {
     const email = getCurrentUserEmail();
     if (!email) return Swal.fire("Error", "No user detected", "error");
 
-    navigator.geolocation.getCurrentPosition(async (position) => {
-        const { latitude, longitude } = position.coords;
-
-        const distance = Math.sqrt(
-            Math.pow(latitude - OFFICE_LAT, 2) +
-            Math.pow(longitude - OFFICE_LON, 2)
-        );
-
-        if (distance > MAX_DISTANCE) {
-            return Swal.fire(
-                "Access Denied",
-                "You are too far from workplace",
-                "error"
-            );
+    const cfg = await loadWorkplaceConfig();
+    let coords = null;
+    let verdict = { ok: true };
+    if (cfg.enabled) {
+        const position = await getPositionOnce();
+        if (!position.success) {
+            return Swal.fire("Location Required", "Please allow GPS and location access parameters to clock in.", "warning");
         }
+        coords = position.coords;
+        verdict = await checkWorkplace(coords);
+        if (!verdict.ok) return Swal.fire("Access Denied", verdict.message, "error");
+    }
 
-        const today = new Date().toLocaleDateString();
+    const today = new Date().toLocaleDateString();
 
-        const check = await window.db.collection("attendance")
-            .where("staffEmail", "==", email)
-            .where("date", "==", today)
-            .get();
+    const check = await window.db.collection("attendance")
+        .where("staffEmail", "==", email)
+        .where("date", "==", today)
+        .get();
 
-        if (!check.empty) {
-            return Swal.fire("Already Checked In", "You have already completed check-in for today.", "warning");
-        }
+    if (!check.empty) {
+        return Swal.fire("Already Checked In", "You have already completed check-in for today.", "warning");
+    }
 
-        await window.db.collection("attendance").add({
-            staffEmail: email,
-            date: today,
-            clockIn: firebase.firestore.FieldValue.serverTimestamp(),
-            clockOut: null,
-            location: { lat: latitude, lon: longitude }
-        });
+    await window.db.collection("attendance").add(Object.assign({
+        staffEmail: email,
+        date: today,
+        clockIn: firebase.firestore.FieldValue.serverTimestamp(),
+        clockOut: null,
+        location: coords ? { lat: coords.latitude, lon: coords.longitude } : null
+    }, attendanceExtras(verdict)));
 
-        await Swal.fire("Clocked In", "Success! Your dashboard access is fully active.", "success");
-        showDashboard();
-
-    }, () => {
-        Swal.fire("Location Required", "Please allow GPS and location access parameters to clock in.", "warning");
-    }, { enableHighAccuracy: true });
+    await Swal.fire("Clocked In", verdict.offSite ? "You are clocked in. This was recorded as off-site." : "Success! Your dashboard access is fully active.", "success");
+    showDashboard();
 };
 
 /**
@@ -1315,6 +1434,11 @@ window.adjustStock = async (productId, productName, operationalMode) => {
             window.markNotifAsRead(notifRef.id);
         }
 
+        if (operationalMode !== "add") {
+            logAudit("stock", "stock_reduce", `Stock reduced: ${productName}`,
+                `${window.toMixedFraction(currentStock)} → ${window.toMixedFraction(afterStock)} (−${window.toMixedFraction(quantity)}). Reason: ${reason}`, { flag: true });
+        }
+
         qtyEl.value = "";
         reasonEl.value = "";
         closeStockModal();
@@ -1480,6 +1604,8 @@ window.renderProducts = function (docs) {
             if (editCat) editCat.value = p.category || "";
             if (editTots) editTots.value = p.totsPerBottle || "";
             if (editTotPrice) editTotPrice.value = p.totPrice || "";
+            const editBarcode = document.getElementById("editProdBarcode");
+            if (editBarcode) editBarcode.value = p.barcode || "";
 
             const editModalEl = document.getElementById("editProductModal");
             if (editModalEl) bootstrap.Modal.getOrCreateInstance(editModalEl).show();
@@ -1509,6 +1635,8 @@ window.renderProducts = function (docs) {
                 try {
                     const docRef = window.db.collection("products").doc(id);
                     await docRef.delete();
+                    logAudit("delete", "product_delete", `Product deleted: ${productName}`,
+                        `Price KSh ${parseFloat(productData.price) || 0}, stock ${window.toMixedFraction(parseFloat(productData.stock) || 0)} at the time`, { flag: true });
 
                     const toast = await Swal.fire({
                         title: 'Deleted!',
@@ -1536,7 +1664,7 @@ window.renderProducts = function (docs) {
  */
 window.openAddProductModal = () => {
     if (!can("products.add")) return denyAccess("add products");
-    ["prodName", "prodBuyPrice", "prodPrice", "prodStock", "prodMin", "prodCategory", "prodTots", "prodTotPrice"].forEach(id => {
+    ["prodName", "prodBuyPrice", "prodPrice", "prodStock", "prodMin", "prodCategory", "prodTots", "prodTotPrice", "prodBarcode"].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.value = "";
     });
@@ -1578,6 +1706,10 @@ function initDashboard() {
             if (totsPerBottle > 0 && totPrice <= 0) {
                 return Swal.fire("Price per tot needed", "You entered how many tots a bottle holds. Enter the price of one tot too.", "warning");
             }
+            const barcode = (document.getElementById("prodBarcode").value || "").trim();
+            if (barcode && barcodeInUse(barcode, null)) {
+                return Swal.fire("Barcode already used", "Another product already has this barcode.", "warning");
+            }
 
             try {
                 // Save main product record
@@ -1589,7 +1721,8 @@ function initDashboard() {
                     min: parseFloat(prodMin.value) || 0,
                     category: document.getElementById("prodCategory").value.trim(),
                     totsPerBottle,
-                    totPrice
+                    totPrice,
+                    barcode
                 });
 
                 // Log to new products history collection
@@ -1617,7 +1750,8 @@ function initDashboard() {
                 hideModalById("addProductModal");
                 Swal.fire("Success!", `Product "${pName}" added to inventory`, "success");
                 prodName.value = prodPrice.value = prodBuyPrice.value = prodStock.value = prodMin.value = "";
-                ["prodCategory", "prodTots", "prodTotPrice"].forEach(id => { const el = document.getElementById(id); if (el) el.value = ""; });
+                ["prodCategory", "prodTots", "prodTotPrice", "prodBarcode"].forEach(id => { const el = document.getElementById(id); if (el) el.value = ""; });
+                const bcNote = document.getElementById("prodBarcodeNote"); if (bcNote) bcNote.textContent = "";
             } catch (err) {
                 Swal.fire("Error", "Failed to add product: " + err.message, "error");
             }
@@ -1634,8 +1768,14 @@ function initDashboard() {
             if (editTots > 0 && editTotPrice <= 0) {
                 return Swal.fire("Price per tot needed", "You entered how many tots a bottle holds. Enter the price of one tot too.", "warning");
             }
+            const editBarcodeValue = (document.getElementById("editProdBarcode").value || "").trim();
+            if (editBarcodeValue && barcodeInUse(editBarcodeValue, editProductId)) {
+                return Swal.fire("Barcode already used", "Another product already has this barcode.", "warning");
+            }
             try {
-                await window.db.collection("products").doc(editProductId).update({
+                const before = (window.productsCache || []).find(d => d.id === editProductId);
+                const was = before ? before.data() : null;
+                const next = {
                     name: document.getElementById("editProdName").value,
                     buyPrice: parseFloat(document.getElementById("editProdBuyingPrice").value) || 0,
                     price: parseFloat(document.getElementById("editProdPrice").value) || 0,
@@ -1643,8 +1783,23 @@ function initDashboard() {
                     min: parseFloat(document.getElementById("editProdMin").value) || 0,
                     category: document.getElementById("editProdCategory").value.trim(),
                     totsPerBottle: editTots,
-                    totPrice: editTotPrice
-                });
+                    totPrice: editTotPrice,
+                    barcode: editBarcodeValue
+                };
+                await window.db.collection("products").doc(editProductId).update(next);
+                if (was) {
+                    const changes = [];
+                    if ((was.name || "") !== next.name) changes.push(`Name: ${was.name} → ${next.name}`);
+                    if ((parseFloat(was.price) || 0) !== next.price) changes.push(`Selling price: KSh ${parseFloat(was.price) || 0} → KSh ${next.price}`);
+                    if ((parseFloat(was.buyPrice) || 0) !== next.buyPrice) changes.push(`Buying price: KSh ${parseFloat(was.buyPrice) || 0} → KSh ${next.buyPrice}`);
+                    if ((parseFloat(was.totPrice) || 0) !== next.totPrice) changes.push(`Tot price: KSh ${parseFloat(was.totPrice) || 0} → KSh ${next.totPrice}`);
+                    if ((parseFloat(was.stock) || 0) !== next.stock) changes.push(`Stock: ${window.toMixedFraction(parseFloat(was.stock) || 0)} → ${window.toMixedFraction(next.stock)}`);
+                    if (changes.length) {
+                        const priceMoved = changes.some(c => /price/i.test(c));
+                        logAudit(priceMoved ? "price" : "stock", priceMoved ? "product_price" : "product_edit", `Product edited: ${next.name}`, changes.join("\n"),
+                            { flag: (parseFloat(was.stock) || 0) > next.stock });
+                    }
+                }
                 hideModalById("editProductModal");
                 Swal.fire("Updated!", "Product details saved.", "success");
             } catch (err) {
@@ -2501,6 +2656,22 @@ const saveCustomerBtn = document.getElementById("saveCustomerBtn");
 
 let selectedProduct = null;
 let cart = [];
+// A discount taken off the whole cart: { kind: "amount" | "percent", value, reason }
+let cartDiscount = null;
+
+function cartSubtotal() {
+    return cart.reduce((sum, c) => sum + c.price * c.qty, 0);
+}
+
+function discountAmountFor(kind, value, subtotal) {
+    const v = parseFloat(value) || 0;
+    const amt = kind === "percent" ? subtotal * v / 100 : v;
+    return Math.max(0, Math.min(round2(amt), round2(subtotal)));
+}
+
+function cartDiscountAmount() {
+    return cartDiscount ? discountAmountFor(cartDiscount.kind, cartDiscount.value, cartSubtotal()) : 0;
+}
 
 window.openCustomerModal = () => {
     if (custName) custName.value = "";
@@ -2531,7 +2702,7 @@ if (addCustomerBtn) {
 function renderCustomersFromSnap(snap) {
     if (!customersTable || !posCustomer) return;
     const keepSelected = posCustomer.value;
-    const canDeleteCust = can("customers.delete"), canPay = can("customers.payment");
+    const canDeleteCust = can("customers.delete"), canPay = can("customers.payment"), canRemind = can("customers.remind");
     let rowsHTML = "";
     let totalOwed = 0, debtors = 0;
     window.customersCache = {};
@@ -2541,18 +2712,19 @@ function renderCustomersFromSnap(snap) {
     docs.forEach(doc => {
         const c = doc.data();
         const bal = Math.round((parseFloat(c.balance) || 0) * 100) / 100;
-        window.customersCache[doc.id] = { id: doc.id, name: c.name, phone: c.phone, balance: bal };
+        window.customersCache[doc.id] = { id: doc.id, name: c.name, phone: c.phone, balance: bal, lastReminderAt: toDate(c.lastReminderAt), reminderCount: c.reminderCount || 0 };
         if (bal > 0) { totalOwed += bal; debtors++; }
 
         const actions = `
             ${bal > 0 && canPay ? `<button class="btn btn-sm btn-custom" onclick="window.openCreditPayment('${doc.id}')" title="Record a payment"><i class="fas fa-hand-holding-dollar me-1"></i>Payment</button>` : ""}
+            ${bal > 0 && canRemind ? `<button class="btn btn-sm btn-soft" onclick="window.openReminders('${doc.id}')" title="Send a reminder"><i class="fas fa-bell text-warning"></i></button>` : ""}
             <button class="btn btn-sm btn-soft" onclick="window.openCreditStatement('${doc.id}')" title="Statement"><i class="fas fa-file-lines"></i></button>
             ${canDeleteCust ? `<button class="btn btn-sm btn-soft delCustBtn" data-id="${doc.id}" title="Delete customer"><i class="fas fa-trash-can text-danger"></i></button>` : ""}`;
 
         rowsHTML += `<tr>
             <td data-label="Name" class="fw-semibold">${c.name}</td>
             <td data-label="Phone">${c.phone || ''}</td>
-            <td data-label="Balance" class="text-end fw-bold ${bal > 0 ? 'text-danger' : 'text-muted'}">${bal > 0 ? "KSh " + bal.toLocaleString(undefined, { minimumFractionDigits: 2 }) : "-"}</td>
+            <td data-label="Balance" class="text-end fw-bold ${bal > 0 ? 'text-danger' : 'text-muted'}">${bal > 0 ? "KSh " + bal.toLocaleString(undefined, { minimumFractionDigits: 2 }) + (canRemind ? `<small class="text-muted d-block fw-normal">${reminderAgo(toDate(c.lastReminderAt))}</small>` : "") : "-"}</td>
             <td class="text-end text-nowrap">${actions}</td>
         </tr>`;
 
@@ -2592,6 +2764,7 @@ function renderCustomersFromSnap(snap) {
                 });
                 if (result.isConfirmed) {
                     await window.db.collection("customers").doc(id).delete();
+                    logAudit("delete", "customer_delete", `Customer deleted: ${cust ? cust.name : id}`, "");
                     Swal.fire("Deleted!", "Customer record removed.", "success");
                 }
             };
@@ -2777,17 +2950,28 @@ function renderCart() {
         cartList.innerHTML = `<li class="empty-state list-unstyled"><i class="fas fa-basket-shopping"></i>Your cart is empty. Search a product above to add it.</li>`;
     }
 
+    if (cart.length === 0) cartDiscount = null;
+
     cart.forEach((c, i) => {
         runningTotal += (c.price * c.qty);
+        const changed = c.listPrice !== undefined && c.listPrice !== c.price;
         const li = document.createElement("li");
         li.className = "list-group-item d-flex justify-content-between align-items-center gap-3";
         li.innerHTML = `
             <div class="me-auto">
                 <div class="cart-line-name"></div>
-                <div class="cart-line-meta">${window.toMixedFraction(c.qty)} × KSh ${Number(c.price).toLocaleString()}</div>
+                <div class="cart-line-meta">${window.toMixedFraction(c.qty)} × ${changed ? `<s class="opacity-75">KSh ${Number(c.listPrice).toLocaleString()}</s> ` : ""}KSh ${Number(c.price).toLocaleString()}${changed ? ` <span class="sale-chip price-chip">price changed</span>` : ""}</div>
             </div>
             <div class="cart-line-total">KSh ${(c.price * c.qty).toFixed(2)}</div>`;
         li.querySelector(".cart-line-name").textContent = itemLabel(c);
+        if (can("pos.priceoverride")) {
+            const tagBtn = document.createElement("button");
+            tagBtn.className = "btn btn-soft btn-sm btn-icon";
+            tagBtn.title = "Change the price";
+            tagBtn.innerHTML = `<i class="fas fa-tag"></i>`;
+            tagBtn.onclick = () => window.openPriceModal(i);
+            li.appendChild(tagBtn);
+        }
         const rmBtn = document.createElement("button");
         rmBtn.className = "btn btn-soft btn-sm btn-icon";
         rmBtn.title = "Remove item";
@@ -2797,7 +2981,24 @@ function renderCart() {
         cartList.appendChild(li);
     });
 
-    if (cartTotalDisplay) cartTotalDisplay.textContent = `KSh ${runningTotal.toFixed(2)}`;
+    const discount = cartDiscountAmount();
+    if (cartTotalDisplay) cartTotalDisplay.textContent = `KSh ${(runningTotal - discount).toFixed(2)}`;
+
+    const info = document.getElementById("cartDiscountInfo");
+    if (info) {
+        if (discount > 0) {
+            const label = cartDiscount.kind === "percent" ? `${cartDiscount.value}% off` : "Discount";
+            info.classList.remove("d-none");
+            info.innerHTML = `<div class="d-flex justify-content-between"><span>Subtotal</span><span>KSh ${runningTotal.toFixed(2)}</span></div>
+                <div class="d-flex justify-content-between"><span>${escHtml(label)}</span><span>− KSh ${discount.toFixed(2)}</span></div>
+                <div class="cart-discount-reason">${escHtml(cartDiscount.reason)} <a href="#" onclick="event.preventDefault(); window.removeDiscount()">remove</a></div>`;
+        } else {
+            info.classList.add("d-none");
+            info.innerHTML = "";
+        }
+    }
+    const dBtn = document.getElementById("cartDiscountBtn");
+    if (dBtn) dBtn.innerHTML = `<i class="fas fa-percent me-2"></i>${discount > 0 ? "Change discount" : "Give discount"}`;
 }
 
 if (productSearch && productResults) {
@@ -2840,50 +3041,41 @@ window.selectProd = (id, name, price) => {
     updatePosUnitOptions();
 };
 
-if (addToCartBtn) {
-    addToCartBtn.onclick = () => {
-        let targetDoc = null;
-        if (selectedProduct && selectedProduct.id) {
-            targetDoc = window.productsCache.find(p => p.id === selectedProduct.id);
-        } else if (posProductEl && posProductEl.value) {
-            targetDoc = window.productsCache.find(p => p.id === posProductEl.value);
-        }
+/**
+ * Puts a product in the cart. Used by the Add button, the camera scanner and barcode readers.
+ * merge = add to an existing whole-bottle line instead of making a second line.
+ * Returns true when it was added.
+ */
+function addProductToCart(targetDoc, requestedQty, sellingTots, merge) {
+    const prodData = targetDoc.data();
+    const prodId = targetDoc.id;
+    const currentStock = parseFloat(prodData.stock) || 0;
+    const totsPerBottle = parseFloat(prodData.totsPerBottle) || 0;
+    // How much of a bottle this sale uses up (a tot is 1 / totsPerBottle of a bottle)
+    const stockNeeded = sellingTots && totsPerBottle > 0 ? Math.round((requestedQty / totsPerBottle) * 1e6) / 1e6 : requestedQty;
+    // Stock already reserved by earlier lines of this same cart
+    const inCart = cart.filter(c => c.id === prodId).reduce((n, c) => n + itemStockQty(c), 0);
 
-        if (!targetDoc) return Swal.fire("No Product Selected", "Search and pick a product first.", "warning");
-        const prodData = targetDoc.data();
-        const prodId = targetDoc.id;
+    if (isNaN(requestedQty) || requestedQty <= 0) {
+        Swal.fire("Invalid Quantity", sellingTots ? "Enter how many tots, for example 2." : "Enter a quantity such as 1 or 1/2.", "warning");
+        return false;
+    }
+    if (currentStock <= 0) {
+        Swal.fire("Out of Stock", `Sorry, ${prodData.name} is out of stock.`, "warning");
+        return false;
+    }
+    if (stockNeeded + inCart > currentStock + 1e-9) {
+        const left = currentStock - inCart;
+        Swal.fire("Insufficient Stock", sellingTots
+            ? `Only about ${Math.max(0, Math.floor(left * totsPerBottle + 1e-6))} tots available.`
+            : `Only ${window.toMixedFraction(Math.max(0, left))} available.`, "warning");
+        return false;
+    }
 
-        const parseQty = (val) => {
-            if (typeof val === 'string' && val.includes('/')) {
-                const parts = val.split('/');
-                if (parts.length === 2 && !isNaN(parseFloat(parts[0])) && !isNaN(parseFloat(parts[1])) && parseFloat(parts[1]) !== 0) {
-                    return parseFloat(parts[0]) / parseFloat(parts[1]);
-                }
-            }
-            return parseFloat(val);
-        };
-
-        const currentStock = parseFloat(prodData.stock) || 0;
-        const requestedQty = parseQty(posQty.value);
-
-        const unitEl = document.getElementById("posUnit");
-        const sellingTots = !!(unitEl && !unitEl.classList.contains("d-none") && unitEl.value === "tot");
-        const totsPerBottle = parseFloat(prodData.totsPerBottle) || 0;
-        // How much of a bottle this sale uses up (a tot is 1 / totsPerBottle of a bottle)
-        const stockNeeded = sellingTots && totsPerBottle > 0 ? Math.round((requestedQty / totsPerBottle) * 1e6) / 1e6 : requestedQty;
-
-        // Stock already reserved by earlier lines of this same cart
-        const inCart = cart.filter(c => c.id === prodId).reduce((n, c) => n + itemStockQty(c), 0);
-
-        if (isNaN(requestedQty) || requestedQty <= 0) return Swal.fire("Invalid Quantity", sellingTots ? "Enter how many tots, for example 2." : "Enter a quantity such as 1 or 1/2.", "warning");
-        if (currentStock <= 0) return Swal.fire("Out of Stock", `Sorry, ${prodData.name} is out of stock.`, "warning");
-        if (stockNeeded + inCart > currentStock + 1e-9) {
-            const left = currentStock - inCart;
-            return Swal.fire("Insufficient Stock", sellingTots
-                ? `Only about ${Math.max(0, Math.floor(left * totsPerBottle + 1e-6))} tots available.`
-                : `Only ${window.toMixedFraction(Math.max(0, left))} available.`, "warning");
-        }
-
+    const existing = merge && !sellingTots ? cart.find(c => c.id === prodId && !c.unit && c.listPrice === undefined) : null;
+    if (existing) {
+        existing.qty += requestedQty;
+    } else {
         cart.push(sellingTots ? {
             id: prodId,
             name: prodData.name,
@@ -2898,12 +3090,42 @@ if (addToCartBtn) {
             price: parseFloat(prodData.price),
             qty: requestedQty
         });
+    }
 
-        try {
-            new Audio("https://actions.google.com/sounds/v1/ui/beep_short.ogg").play();
-        } catch (e) { }
+    try {
+        new Audio("https://actions.google.com/sounds/v1/ui/beep_short.ogg").play();
+    } catch (e) { }
 
-        renderCart();
+    renderCart();
+    return true;
+}
+
+if (addToCartBtn) {
+    addToCartBtn.onclick = () => {
+        let targetDoc = null;
+        if (selectedProduct && selectedProduct.id) {
+            targetDoc = window.productsCache.find(p => p.id === selectedProduct.id);
+        } else if (posProductEl && posProductEl.value) {
+            targetDoc = window.productsCache.find(p => p.id === posProductEl.value);
+        }
+
+        if (!targetDoc) return Swal.fire("No Product Selected", "Search and pick a product first.", "warning");
+
+        const parseQty = (val) => {
+            if (typeof val === 'string' && val.includes('/')) {
+                const parts = val.split('/');
+                if (parts.length === 2 && !isNaN(parseFloat(parts[0])) && !isNaN(parseFloat(parts[1])) && parseFloat(parts[1]) !== 0) {
+                    return parseFloat(parts[0]) / parseFloat(parts[1]);
+                }
+            }
+            return parseFloat(val);
+        };
+
+        const requestedQty = parseQty(posQty.value);
+        const unitEl = document.getElementById("posUnit");
+        const sellingTots = !!(unitEl && !unitEl.classList.contains("d-none") && unitEl.value === "tot");
+
+        if (!addProductToCart(targetDoc, requestedQty, sellingTots, false)) return;
 
         selectedProduct = null;
         updatePosUnitOptions();
@@ -2938,7 +3160,7 @@ if (saveCustomerBtn) {
     };
 }
 
-if (clearCartBtn) clearCartBtn.onclick = () => { cart = []; renderCart(); };
+if (clearCartBtn) clearCartBtn.onclick = () => { cart = []; cartDiscount = null; renderCart(); };
 renderCart();
 
 if (checkoutBtn) {
@@ -2950,7 +3172,8 @@ if (checkoutBtn) {
             ? posCustEl.selectedOptions[0].text
             : "Guest";
 
-        const runningTotal = cart.reduce((sum, c) => sum + (c.price * c.qty), 0);
+        const cartDisc = cartDiscountAmount();
+        const runningTotal = cartSubtotal() - cartDisc;
 
         const modalCustEl = document.getElementById("modalCustomerName");
         const modalTotalEl = document.getElementById("modalTotalAmount");
@@ -2968,7 +3191,11 @@ if (checkoutBtn) {
                     </div>
                     <span class="fw-bold">KSh ${(i.price * i.qty).toFixed(2)}</span>
                 </div>
-            `).join('');
+            `).join('') + (cartDisc > 0 ? `
+                <div class="d-flex justify-content-between align-items-center py-2 text-success">
+                    <span><i class="fas fa-percent me-1"></i>Discount <small class="text-muted">(${escHtml(cartDiscount.reason)})</small></span>
+                    <span class="fw-bold">− KSh ${cartDisc.toFixed(2)}</span>
+                </div>` : "");
         }
 
         const methodEl = document.getElementById("paymentMethod");
@@ -3036,6 +3263,7 @@ if (paymentCompleteBtn) {
         const processCheckout = async () => {
             const processedItems = [];
             const lowStock = [];
+            const priceChanges = [];
             let totalAmount = 0;
             const batch = window.db.batch();
 
@@ -3070,7 +3298,11 @@ if (paymentCompleteBtn) {
                     price: sellPrice,
                     qty: requestedQty,
                     cost: unitCost
-                }, isTot ? { unit: "tot", stockQty: stockNeeded } : {}));
+                }, isTot ? { unit: "tot", stockQty: stockNeeded } : {},
+                    c.listPrice !== undefined && c.listPrice !== c.price ? { listPrice: c.listPrice, priceReason: c.priceReason || "" } : {}));
+                if (c.listPrice !== undefined && c.listPrice !== c.price) {
+                    priceChanges.push({ name: itemLabel(c), from: c.listPrice, to: sellPrice, reason: c.priceReason || "" });
+                }
 
                 // Batch stock reduction
                 const newStock = Math.max(currentStock - stockNeeded, 0);
@@ -3083,18 +3315,44 @@ if (paymentCompleteBtn) {
                 }
             }
 
+            // A discount on the whole cart is shared across the lines, so every report still adds up to the money taken
+            let discountRecord = null;
+            const cartDisc = cartDiscountAmount();
+            if (cartDisc > 0 && totalAmount > 0) {
+                const subtotal = totalAmount;
+                const factor = (subtotal - cartDisc) / subtotal;
+                processedItems.forEach(it => {
+                    if (it.listPrice === undefined) it.listPrice = it.price;
+                    it.price = round2(it.price * factor);
+                });
+                totalAmount = round2(processedItems.reduce((s, i) => s + i.price * i.qty, 0));
+                discountRecord = {
+                    amount: round2(subtotal - totalAmount),
+                    kind: cartDiscount.kind,
+                    value: cartDiscount.value,
+                    reason: cartDiscount.reason,
+                    by: getCurrentUserEmail() || "unknown"
+                };
+            }
+            const hasChanges = !!discountRecord || priceChanges.length > 0;
+            const giveaway = round2(processedItems.reduce((s, i) => s + Math.max(0, (i.listPrice !== undefined ? i.listPrice : i.price) - i.price) * i.qty, 0));
+            const belowCost = hasChanges && processedItems.some(i => i.cost > 0 && i.price < i.cost);
+
             // 2. Add Sale transaction record to batch
             const saleRef = window.db.collection("sales").doc();
             const paymentValue = paymentMethodEl ? paymentMethodEl.value : "Cash";
-            batch.set(saleRef, {
+            batch.set(saleRef, Object.assign({
                 customer: customerName,
                 customerId: saleCustomerId,
                 items: processedItems,
                 total: totalAmount,
                 payment: paymentValue,
                 transaction: transCodeEl ? transCodeEl.value : "",
+                soldBy: getCurrentUserEmail() || "unknown",
                 date: new Date()
-            });
+            }, discountRecord ? { discount: discountRecord } : {},
+               priceChanges.length ? { priceChanges } : {},
+               belowCost ? { belowCost: true } : {}));
 
             // A sale on credit adds to the customer's balance in the same all-or-nothing write
             if (paymentValue === "Credit" && saleCustomerId) {
@@ -3106,7 +3364,7 @@ if (paymentCompleteBtn) {
             // 3. Execute atomic batch write (all or nothing). Offline, it is saved on the device and syncs later,
             //    so we stop waiting after a few seconds instead of reporting a false failure.
             const confirmed = await writeWithGrace(batch.commit());
-            return { items: processedItems, total: totalAmount, lowStock, queued: !confirmed };
+            return { items: processedItems, total: totalAmount, lowStock, queued: !confirmed, saleId: saleRef.id, discount: discountRecord, priceChanges, giveaway, belowCost };
         };
 
         // 10-Second Timeout Race Controller
@@ -3130,8 +3388,24 @@ if (paymentCompleteBtn) {
                 }
             }
 
+            // Discounts and price changes are always written to the audit trail
+            if (saleResult.discount || (saleResult.priceChanges && saleResult.priceChanges.length)) {
+                const parts = [];
+                if (saleResult.discount) {
+                    const d = saleResult.discount;
+                    parts.push(`Discount ${creditMoney(d.amount)}${d.kind === "percent" ? ` (${d.value}%)` : ""}: ${d.reason}`);
+                }
+                (saleResult.priceChanges || []).forEach(p => parts.push(`${p.name}: KSh ${p.from} → KSh ${p.to} (${p.reason || "no reason"})`));
+                if (saleResult.belowCost) parts.push("Sold BELOW the buying price");
+                logAudit("price", saleResult.discount ? "discount" : "price_change",
+                    `${saleResult.discount ? "Discount" : "Price changed"} on a sale of ${creditMoney(saleResult.total)} (${customerName})`,
+                    parts.join("\n"),
+                    { amount: saleResult.giveaway, flag: saleResult.belowCost, ref: saleResult.saleId, alert: true });
+            }
+
             // Clear cart & reset inputs
             cart = [];
+            cartDiscount = null;
             renderCart();
             if (transCodeEl) transCodeEl.value = "";
             if (posCustEl) posCustEl.value = "";
@@ -3349,15 +3623,19 @@ window.filterSalesTable = () => {
         // Summary line: show the searched item first if there is one
         const lead = (query && s.items.find(i => i.name.toLowerCase().includes(query))) || s.items[0];
         const more = s.items.length - 1;
+        const refundedAmt = parseFloat(s.refundedAmount) || 0;
+        const fullyRefunded = s.items.length === 0;
+        const discAmt = s.discount ? parseFloat(s.discount.amount) || 0 : 0;
 
         const itemsHTML = s.items.map((i, idx) => {
             const isMatch = query && i.name.toLowerCase().includes(query);
             const qtyVal = parseFloat(i.qty) || 0;
             const subtotal = (parseFloat(i.price) || 0) * qtyVal;
+            const listed = i.listPrice !== undefined && parseFloat(i.listPrice) !== parseFloat(i.price);
             return `
                 <li class="${isMatch ? 'match' : ''}">
                     <span class="sale-qty">${window.toMixedFraction(qtyVal)}</span>
-                    <span class="name">${itemLabel(i)}<small class="text-muted d-block">@ KSh ${(parseFloat(i.price) || 0).toLocaleString()}</small></span>
+                    <span class="name">${itemLabel(i)}<small class="text-muted d-block">@ ${listed ? `<s>KSh ${(parseFloat(i.listPrice) || 0).toLocaleString()}</s> ` : ""}KSh ${(parseFloat(i.price) || 0).toLocaleString()}</small></span>
                     <strong>KSh ${money(subtotal)}</strong>
                     ${canRemove ? `<button class="btn btn-link p-0 border-0" title="Remove this item" onclick="window.deleteItemFromSale('${s.id}', ${idx})"><i class="fas fa-circle-xmark text-danger"></i></button>` : ''}
                 </li>`;
@@ -3368,8 +3646,8 @@ window.filterSalesTable = () => {
                 <summary>
                     <span class="sr-time">${timeStr}</span>
                     <span class="sr-cust"><i class="fas fa-user"></i>${s.customer || 'Guest'}</span>
-                    <span class="sr-items">${itemLabel(lead)} <b>× ${window.toMixedFraction(lead.qty)}</b>${more > 0 ? ` <span class="sr-more">+${more} more</span>` : ''}</span>
-                    <span class="sr-pay">${s._pending ? '<span class="sale-chip pending" title="Saved on this device, waiting to sync">Not synced</span> ' : ''}${s.payment ? `<span class="sale-chip ${s.payment === 'Credit' ? 'credit' : ''}">${s.payment}</span>` : ''}</span>
+                    <span class="sr-items">${lead ? `${itemLabel(lead)} <b>× ${window.toMixedFraction(lead.qty)}</b>${more > 0 ? ` <span class="sr-more">+${more} more</span>` : ''}` : '<span class="text-muted">All items refunded</span>'}</span>
+                    <span class="sr-pay">${s._pending ? '<span class="sale-chip pending" title="Saved on this device, waiting to sync">Not synced</span> ' : ''}${s.payment ? `<span class="sale-chip ${s.payment === 'Credit' ? 'credit' : ''}">${s.payment}</span>` : ''}${discAmt > 0 ? ' <span class="sale-chip price-chip">Discount</span>' : ''}${refundedAmt > 0 ? ' <span class="sale-chip refund-chip">Refunded</span>' : ''}</span>
                     <span class="sr-total">KSh ${money(s.total)}</span>
                     <span class="sr-chev"><i class="fas fa-chevron-down"></i></span>
                 </summary>
@@ -3378,10 +3656,15 @@ window.filterSalesTable = () => {
                         <span><i class="far fa-clock me-1"></i>${saleDate.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</span>
                         <span>${s.items.length} item${s.items.length > 1 ? 's' : ''} · ${window.toMixedFraction(totalQty)} units</span>
                         ${s.transaction ? `<span class="sale-chip font-monospace">${s.transaction}</span>` : ''}
+                        ${s.soldBy ? `<span><i class="fas fa-user-check me-1"></i>${escHtml(s.soldBy)}</span>` : ''}
                     </div>
-                    <ul class="sale-items">${itemsHTML}</ul>
+                    <ul class="sale-items">${itemsHTML || (s.originalItems || []).map(i => `<li class="text-muted"><span class="sale-qty">${window.toMixedFraction(parseFloat(i.qty) || 0)}</span><span class="name"><s>${escHtml(itemLabel(i))}</s><small class="d-block">refunded</small></span></li>`).join('')}</ul>
+                    ${discAmt > 0 ? `<div class="sale-note price-note"><i class="fas fa-percent"></i><span><b>Discount KSh ${money(discAmt)}</b>${s.discount.kind === "percent" ? ` (${escHtml(s.discount.value)}%)` : ""} · ${escHtml(s.discount.reason || "no reason")}${s.discount.by ? ` · by ${escHtml(s.discount.by)}` : ""}</span></div>` : ''}
+                    ${(s.priceChanges || []).map(p => `<div class="sale-note price-note"><i class="fas fa-tag"></i><span><b>${escHtml(p.name)}</b> sold at KSh ${money(p.to)} instead of KSh ${money(p.from)} · ${escHtml(p.reason || "no reason")}</span></div>`).join('')}
+                    ${refundedAmt > 0 ? `<div class="sale-note refund-note"><i class="fas fa-rotate-left"></i><span><b>Refunded KSh ${money(refundedAmt)}</b>${s.lastRefund ? ` · ${escHtml(s.lastRefund.reason || "")}${s.lastRefund.by ? ` · by ${escHtml(s.lastRefund.by)}` : ""}` : ""}${s.originalTotal !== undefined ? ` · the sale was KSh ${money(s.originalTotal)}` : ""}</span></div>` : ''}
                     <div class="sale-actions">
-                        ${canReceipt ? `<button class="btn btn-soft btn-sm" onclick="window.downloadSale('${s.id}')"><i class="fas fa-file-pdf text-danger me-1"></i>Receipt</button>` : ''}
+                        ${can("pos.refund") && !fullyRefunded ? `<button class="btn btn-soft btn-sm" onclick="window.openRefundModal('${s.id}')"><i class="fas fa-rotate-left text-warning me-1"></i>Refund</button>` : ''}
+                        ${canReceipt && !fullyRefunded ? `<button class="btn btn-soft btn-sm" onclick="window.downloadSale('${s.id}')"><i class="fas fa-file-pdf text-danger me-1"></i>Receipt</button>` : ''}
                         ${canRemove ? `<button class="btn btn-soft btn-sm" onclick="window.deleteSale('${s.id}')"><i class="fas fa-trash-can text-danger me-1"></i>Delete</button>` : ''}
                     </div>
                 </div>
@@ -3731,6 +4014,9 @@ window.deleteMonthProfit = async (monthKey) => {
         }
 
         await batch.commit();
+        logAudit("delete", "month_delete", `A whole month of sales deleted: ${monthKey}`,
+            `${salesToDelete.length} sales, KSh ${salesToDelete.reduce((n, s) => n + (parseFloat(s.total) || 0), 0).toLocaleString()}. ${shouldRestock ? "Stock put back." : "Stock NOT put back."}`,
+            { amount: salesToDelete.reduce((n, s) => n + (parseFloat(s.total) || 0), 0), flag: true, alert: true });
 
         if (shouldRestock) {
             showRestockedAlert(restockedItems, `${monthKey} Sales Deleted & Stock Restored`);
@@ -4009,6 +4295,9 @@ window.deleteItemFromSale = async (saleId, itemIndex) => {
         }
 
         await batch.commit();
+        logAudit("delete", "sale_item_delete", `Item removed from a sale: ${itemLabel(itemToDelete)}`,
+            `${window.toMixedFraction(itemToDelete.qty)} × KSh ${parseFloat(itemToDelete.price) || 0} (sale to ${sale.customer || "Guest"}). ${shouldRestock ? "Stock put back." : "Stock NOT put back."}`,
+            { amount: (parseFloat(itemToDelete.price) || 0) * (parseFloat(itemToDelete.qty) || 0), flag: !shouldRestock, ref: saleId, alert: true });
 
         if (shouldRestock) {
             showRestockedAlert(restockedItems, "Item Removed & Stock Restored");
@@ -4074,6 +4363,9 @@ window.deleteSale = async (id) => {
         }
 
         await batch.commit();
+        logAudit("delete", "sale_delete", `Sale deleted: ${sale.customer || "Guest"}, KSh ${(parseFloat(sale.total) || 0).toLocaleString()}`,
+            `${(sale.items || []).map(i => `${window.toMixedFraction(i.qty)} × ${itemLabel(i)}`).join(", ") || "no items left"}. Paid by ${sale.payment || "Cash"}. ${shouldRestock ? "Stock put back." : "Stock NOT put back."}`,
+            { amount: parseFloat(sale.total) || 0, flag: !shouldRestock, ref: id, alert: true });
 
         if (shouldRestock) {
             showRestockedAlert(restockedItems, "Transaction Deleted & Stock Restored");
@@ -4168,6 +4460,9 @@ window.deleteDay = async (dateStr) => {
         }
 
         await batch.commit();
+        logAudit("delete", "day_delete", `A whole day of sales deleted: ${dateStr}`,
+            `${salesToDelete.length} sales, KSh ${salesToDelete.reduce((n, s) => n + (parseFloat(s.total) || 0), 0).toLocaleString()}. ${shouldRestock ? "Stock put back." : "Stock NOT put back."}`,
+            { amount: salesToDelete.reduce((n, s) => n + (parseFloat(s.total) || 0), 0), flag: true, alert: true });
 
         if (shouldRestock) {
             showRestockedAlert(restockedItems, `Daily Sales for ${dateStr} Deleted & Stock Restored`);
@@ -4791,6 +5086,7 @@ window.deleteStaffUser = async (docId) => {
         });
         if (res.isConfirmed) {
             await window.db.collection("users").doc(docId).delete();
+            logAudit("people", "staff_delete", `Staff account removed: ${docId}`, "", { flag: true });
             Swal.fire("Deleted", "Profile removed from database", "success");
         }
     } catch (err) {
@@ -5158,10 +5454,19 @@ function computeDaySummary(dateValue) {
         if (paymentBucket(p.method) === "cash") creditPaid.cash += amt; else creditPaid.other += amt;
     });
 
+    // Cash handed back that day for sales made on an earlier day (refunds of today's own sales are already inside today's sales)
+    let refundsOut = 0, refundsOutCount = 0;
+    (window.refundsList || []).forEach(r => {
+        if (r.dateKey !== dateValue || r.saleDateKey === dateValue) return;
+        if (paymentBucket(r.method) !== "cash") return;
+        refundsOut += parseFloat(r.amount) || 0;
+        refundsOutCount++;
+    });
+
     return {
         dateKey: dateValue,
         label: day.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" }),
-        buckets, total, count, creditPaid
+        buckets, total, count, creditPaid, refundsOut: round2(refundsOut), refundsOutCount
     };
 }
 
@@ -5200,9 +5505,13 @@ window.updateCloseDaySummary = () => {
         <div class="cd-row">
             <span>Credit repayments received<small>${sum.creditPaid.count} payment${sum.creditPaid.count === 1 ? "" : "s"} · cash ${insightMoney(sum.creditPaid.cash)}</small></span>
             <strong>${insightMoney(sum.creditPaid.total)}</strong>
+        </div>` : "") + (sum.refundsOutCount > 0 ? `
+        <div class="cd-row">
+            <span>Cash refunded for earlier sales<small>${sum.refundsOutCount} refund${sum.refundsOutCount === 1 ? "" : "s"}</small></span>
+            <strong>− ${insightMoney(sum.refundsOut)}</strong>
         </div>` : "");
 
-    const expected = openingFloat + sum.buckets.cash.amount + sum.creditPaid.cash;
+    const expected = openingFloat + sum.buckets.cash.amount + sum.creditPaid.cash - sum.refundsOut;
     document.getElementById("closeDayExpected").textContent = insightMoney(expected);
 
     const diffEl = document.getElementById("closeDayDiff");
@@ -5242,7 +5551,7 @@ window.saveDayClosing = async () => {
     const sum = computeDaySummary(dateValue);
     const openingFloat = parseFloat(document.getElementById("closeDayFloat").value) || 0;
     const counted = parseFloat(countedRaw) || 0;
-    const expected = openingFloat + sum.buckets.cash.amount + sum.creditPaid.cash;
+    const expected = openingFloat + sum.buckets.cash.amount + sum.creditPaid.cash - sum.refundsOut;
     const difference = Math.round((counted - expected) * 100) / 100;
     const ref = window.db.collection("day_closings").doc(dateValue);
 
@@ -5357,7 +5666,10 @@ window.deleteDayClosing = async (id) => {
     });
     if (!res.isConfirmed) return;
     try {
+        const was = window.dayClosings && window.dayClosings[id];
         await window.db.collection("day_closings").doc(id).delete();
+        logAudit("money", "closing_delete", `Day closing deleted: ${id}`,
+            was ? `It had been closed by ${was.closedBy || "unknown"}: counted ${insightMoney(was.countedCash)}, expected ${insightMoney(was.expectedCash)}` : "", { flag: true });
     } catch (err) {
         Swal.fire("Error", err.message, "error");
     }
@@ -5903,6 +6215,8 @@ window.applyStockTake = async (id) => {
             appliedBy: getCurrentUserEmail() || "unknown",
             appliedAt: new Date()
         });
+        logAudit("stock", "stocktake_apply", `Stock changed to match a count (${diffs.length} product${diffs.length === 1 ? "" : "s"})`,
+            diffs.slice(0, 12).map(i => `${i.name}: ${i.diff > 0 ? "+" : ""}${window.toMixedFraction(i.diff)}`).join("\n") + (diffs.length > 12 ? `\n…and ${diffs.length - 12} more` : ""), { flag: diffs.some(i => i.diff < 0) });
         Swal.fire("Stock updated", `${diffs.length} product${diffs.length === 1 ? "" : "s"} now match the count.`, "success");
     } catch (err) {
         Swal.fire("Could not update stock", err.message, "error");
@@ -5913,7 +6227,7 @@ window.deleteStockTake = async (id) => {
     if (!can("stocktake.apply")) return denyAccess("delete stock counts");
     const res = await Swal.fire({ title: "Delete this stock count?", text: "Stock levels are not changed.", icon: "warning", showCancelButton: true, confirmButtonColor: "#d33", confirmButtonText: "Yes, delete" });
     if (!res.isConfirmed) return;
-    try { await window.db.collection("stock_takes").doc(id).delete(); } catch (err) { Swal.fire("Error", err.message, "error"); }
+    try { await window.db.collection("stock_takes").doc(id).delete(); logAudit("delete", "stocktake_delete", "Stock count deleted", ""); } catch (err) { Swal.fire("Error", err.message, "error"); }
 };
 
 
@@ -6679,6 +6993,14 @@ window.discardPermissionChanges = () => {
 window.savePermissions = async () => {
     if (!isAdmin()) return denyAccess("change permissions");
     if (!window.permDraft) return;
+    const permChanges = [];
+    ["staff", "manager"].forEach(role => PERMISSION_GROUPS.forEach(g => g.items.forEach(i => {
+        const saved = window.permissions && window.permissions[role] && window.permissions[role][i.key];
+        const before = saved !== undefined ? !!saved : !!PERMISSION_DEFAULTS[role][i.key];
+        const draft = window.permDraft[role] ? window.permDraft[role][i.key] : undefined;
+        const after = draft !== undefined ? !!draft : before;
+        if (before !== after) permChanges.push(`${permRoleLabel(role)}: ${after ? "allowed" : "no longer allowed"} to "${i.label}"`);
+    })));
     try {
         await window.db.collection("settings").doc("permissions").set({
             staff: window.permDraft.staff,
@@ -6687,6 +7009,7 @@ window.savePermissions = async () => {
             updatedBy: getCurrentUserEmail() || "admin"
         });
         setPermDirty(false);
+        if (permChanges.length) logAudit("people", "permissions", `Permissions changed (${permChanges.length})`, permChanges.slice(0, 15).join("\n") + (permChanges.length > 15 ? `\n…and ${permChanges.length - 15} more` : ""), { flag: true });
         Swal.fire({ icon: "success", title: "Permissions saved", text: "The changes apply straight away to everyone who is logged in.", timer: 2400, showConfirmButton: false });
     } catch (err) {
         Swal.fire("Could not save", err.message + " (If this says permission denied, allow write access to the 'settings' collection in your Firestore rules.)", "error");
@@ -6703,6 +7026,1715 @@ window.renderPermissionEditor();
 
 
 /* ==========================================================================
+   SECTION 12G: SUPPLIERS & DELIVERIES, DEBT REMINDERS, BARCODE SCANNING
+   ========================================================================== */
+
+/* ----------------------------------------------------------------- helpers */
+const MIN_MARGIN_PCT = 10;                       // below this profit margin a price change is flagged
+const roundUp5 = (n) => Math.ceil(n / 5) * 5;
+const toDate = (v) => (v && v.toDate ? v.toDate() : (v ? new Date(v) : null));
+const shortDate = (d) => (d ? d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "");
+const cleanNum = (n) => Math.round((parseFloat(n) || 0) * 100) / 100;
+
+/* ====================================================================== SUPPLIERS & DELIVERIES */
+window.suppliersCache = {};
+window.deliveries = [];
+window.supplierPayments = [];
+window.supDeliveryLimit = 25;
+
+window.db.collection("suppliers").onSnapshot(snap => {
+    window.suppliersCache = {};
+    snap.forEach(d => {
+        const data = d.data();
+        window.suppliersCache[d.id] = { id: d.id, ...data, balance: cleanNum(data.balance) };
+    });
+    window.renderSuppliers();
+}, err => console.warn("Suppliers listener:", err));
+
+window.db.collection("deliveries").orderBy("date", "desc").limit(300).onSnapshot(snap => {
+    window.deliveries = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    window.renderSuppliers();
+}, err => console.warn("Deliveries listener:", err));
+
+window.db.collection("supplier_payments").orderBy("at", "desc").limit(300).onSnapshot(snap => {
+    window.supplierPayments = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}, err => console.warn("Supplier payments listener:", err));
+
+/**
+ * Checks one delivery line against the product it is for: did the cost change, and does the
+ * selling price still leave a profit? (pure, so it can be shown live while typing and again on save)
+ */
+function deliveryLineCheck(line) {
+    const oldCost = parseFloat(line.oldCost) || 0;
+    const newCost = parseFloat(line.unitCost) || 0;
+    const price = parseFloat(line.price) || 0;
+    const out = { changed: false, pct: 0, loss: false, low: false, margin: null, suggest: null, flagged: false };
+
+    if (oldCost > 0 && Math.abs(newCost - oldCost) > 0.004) {
+        out.changed = true;
+        out.pct = ((newCost - oldCost) / oldCost) * 100;
+    }
+    if (price > 0 && newCost > 0) {
+        out.margin = ((price - newCost) / price) * 100;
+        if (newCost >= price) out.loss = true;
+        else if (out.margin < MIN_MARGIN_PCT) out.low = true;
+        if (out.loss || out.low) out.suggest = roundUp5(newCost / (1 - MIN_MARGIN_PCT / 100));
+    }
+    // Warn when the supplier's price changed and the profit is now thin, or whenever the product would sell at a loss
+    out.flagged = (out.changed && (out.loss || out.low)) || out.loss;
+    return out;
+}
+
+/* ---------------------------------------------------------------- the Suppliers tab */
+window.renderSuppliers = () => {
+    const pane = document.getElementById("suppliersTab");
+    if (!pane) return;
+    if (!pane.classList.contains("active")) { window.suppliersNeedsRender = true; return; }
+    window.suppliersNeedsRender = false;
+
+    const list = Object.values(window.suppliersCache).sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+    const owing = list.filter(s => s.balance > 0);
+    const totalOwed = owing.reduce((n, s) => n + s.balance, 0);
+
+    const setText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+    setText("supOwedTotal", insightMoney(totalOwed));
+    setText("supOwedCount", owing.length ? `owed to ${owing.length} supplier${owing.length === 1 ? "" : "s"}` : "you owe nothing right now");
+    setText("supCount", list.length);
+
+    const canPay = can("suppliers.pay"), canManage = can("suppliers.manage");
+    const canDeliver = can("deliveries.record"), canDelete = can("suppliers.delete");
+    const lastBySupplier = {};
+    window.deliveries.forEach(dv => { if (!lastBySupplier[dv.supplierId]) lastBySupplier[dv.supplierId] = toDate(dv.date); });
+
+    const body = document.getElementById("suppliersBody");
+    if (body) {
+        body.innerHTML = list.length ? list.map(s => `
+            <tr>
+                <td data-label="Supplier" class="fw-semibold">${escHtml(s.name)}${s.notes ? `<small class="text-muted d-block">${escHtml(s.notes)}</small>` : ""}</td>
+                <td data-label="Phone">${escHtml(s.phone || "")}</td>
+                <td data-label="Owed" class="text-end fw-bold ${s.balance > 0 ? "text-danger" : "text-muted"}">${s.balance > 0 ? insightMoney(s.balance) : "-"}</td>
+                <td data-label="Last delivery" class="text-muted">${lastBySupplier[s.id] ? shortDate(lastBySupplier[s.id]) : "None yet"}</td>
+                <td class="text-end text-nowrap">
+                    ${canDeliver ? `<button class="btn btn-sm btn-custom" onclick="window.openDeliveryModal('${s.id}')" title="Record a delivery"><i class="fas fa-truck-ramp-box me-1"></i>Delivery</button>` : ""}
+                    ${s.balance > 0 && canPay ? `<button class="btn btn-sm btn-soft" onclick="window.openSupplierPayment('${s.id}')" title="Record a payment"><i class="fas fa-hand-holding-dollar me-1 text-success"></i>Pay</button>` : ""}
+                    <button class="btn btn-sm btn-soft" onclick="window.openSupplierStatement('${s.id}')" title="Statement"><i class="fas fa-file-lines"></i></button>
+                    ${canManage ? `<button class="btn btn-sm btn-soft" onclick="window.openSupplierModal('${s.id}')" title="Edit supplier"><i class="fas fa-pen text-primary"></i></button>` : ""}
+                    ${canDelete ? `<button class="btn btn-sm btn-soft" onclick="window.deleteSupplier('${s.id}')" title="Delete supplier"><i class="fas fa-trash-can text-danger"></i></button>` : ""}
+                </td>
+            </tr>`).join("")
+            : `<tr><td colspan="5"><div class="empty-state"><i class="fas fa-truck"></i>No suppliers yet. Add your first one.</div></td></tr>`;
+    }
+
+    renderDeliveriesList();
+    renderCostChanges();
+};
+
+function deliveryStatus(dv) {
+    const total = parseFloat(dv.total) || 0, paid = parseFloat(dv.paid) || 0;
+    if (paid >= total - 0.005) return { key: "paid", label: "Paid", cls: "ok" };
+    if (paid > 0) return { key: "part", label: "Part paid", cls: "warn" };
+    return { key: "unpaid", label: "Unpaid", cls: "bad" };
+}
+
+function renderDeliveriesList() {
+    const box = document.getElementById("deliveriesList");
+    if (!box) return;
+    const list = window.deliveries;
+    if (!list.length) {
+        box.innerHTML = `<div class="empty-state"><i class="fas fa-truck-ramp-box"></i>No deliveries recorded yet.</div>`;
+        return;
+    }
+    const canVoid = can("suppliers.delete");
+    const visible = list.slice(0, window.supDeliveryLimit);
+
+    const rows = visible.map(dv => {
+        const d = toDate(dv.date);
+        const st = deliveryStatus(dv);
+        const items = dv.items || [];
+        const lead = items[0];
+        const more = items.length - 1;
+        const changed = items.filter(i => i.oldCost > 0 && Math.abs(i.unitCost - i.oldCost) > 0.004).length;
+
+        return `
+            <details class="sale-row">
+                <summary>
+                    <span class="sr-time">${d ? d.toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : ""}</span>
+                    <span class="sr-cust"><i class="fas fa-truck"></i>${escHtml(dv.supplierName || "")}</span>
+                    <span class="sr-items">${lead ? escHtml(lead.name) + " <b>× " + window.toMixedFraction(lead.qty) + "</b>" : ""}${more > 0 ? ` <span class="sr-more">+${more} more</span>` : ""}${changed ? ` <span class="sr-more sr-warn">${changed} cost change${changed === 1 ? "" : "s"}</span>` : ""}</span>
+                    <span class="sr-pay"><span class="cd-pill ${st.cls}">${st.label}</span></span>
+                    <span class="sr-total">${insightMoney(dv.total)}</span>
+                    <span class="sr-chev"><i class="fas fa-chevron-down"></i></span>
+                </summary>
+                <div class="sale-detail">
+                    <div class="sale-detail-meta">
+                        <span><i class="far fa-clock me-1"></i>${d ? d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : ""}</span>
+                        ${dv.invoiceNo ? `<span class="sale-chip font-monospace">Invoice ${escHtml(dv.invoiceNo)}</span>` : ""}
+                        <span>Paid ${insightMoney(dv.paid)} of ${insightMoney(dv.total)}</span>
+                        <span>by ${escHtml(dv.receivedBy || "")}</span>
+                    </div>
+                    <ul class="sale-items">${items.map(i => {
+                        const ch = i.oldCost > 0 && Math.abs(i.unitCost - i.oldCost) > 0.004 ? ((i.unitCost - i.oldCost) / i.oldCost) * 100 : null;
+                        return `<li>
+                            <span class="sale-qty">${window.toMixedFraction(i.qty)}</span>
+                            <span class="name">${escHtml(i.name)}<small class="text-muted d-block">@ ${insightMoney(i.unitCost)}${ch !== null ? ` · was ${insightMoney(i.oldCost)} <b class="${ch > 0 ? "text-danger" : "text-success"}">${ch > 0 ? "▲" : "▼"}${Math.abs(ch).toFixed(1)}%</b>` : ""}</small></span>
+                            <strong>${insightMoney(i.qty * i.unitCost)}</strong>
+                        </li>`;
+                    }).join("")}</ul>
+                    ${dv.notes ? `<div class="small text-muted mt-2"><i class="fas fa-note-sticky me-1"></i>${escHtml(dv.notes)}</div>` : ""}
+                    ${canVoid ? `<div class="sale-actions"><button class="btn btn-soft btn-sm" onclick="window.voidDelivery('${dv.id}')"><i class="fas fa-rotate-left text-danger me-1"></i>Void delivery</button></div>` : ""}
+                </div>
+            </details>`;
+    }).join("");
+
+    const remaining = list.length - visible.length;
+    box.innerHTML = `<div class="sales-day"><div class="sales-day-body">${rows}</div></div>
+        <div class="sales-list-footer"><span class="text-muted small">Showing ${visible.length} of ${list.length} deliveries</span>
+        ${remaining > 0 ? `<button class="btn btn-custom btn-sm" onclick="window.supDeliveryLimit += 25; window.renderSuppliers()">Show ${Math.min(25, remaining)} more</button>` : ""}</div>`;
+}
+
+function renderCostChanges() {
+    const body = document.getElementById("costChangesBody");
+    if (!body) return;
+    const priceOf = (id) => { const d = (window.productsCache || []).find(x => x.id === id); return d ? parseFloat(d.data().price) || 0 : 0; };
+    const rows = [];
+    window.deliveries.forEach(dv => (dv.items || []).forEach(i => {
+        if (i.oldCost > 0 && Math.abs(i.unitCost - i.oldCost) > 0.004) rows.push({ dv, i });
+    }));
+    body.innerHTML = rows.length ? rows.slice(0, 80).map(({ dv, i }) => {
+        const ch = ((i.unitCost - i.oldCost) / i.oldCost) * 100;
+        const price = priceOf(i.productId);
+        const margin = price > 0 ? ((price - i.unitCost) / price) * 100 : null;
+        const bad = margin !== null && margin < MIN_MARGIN_PCT;
+        return `<tr>
+            <td class="text-muted text-nowrap">${shortDate(toDate(dv.date))}</td>
+            <td class="fw-semibold">${escHtml(i.name)}</td>
+            <td>${escHtml(dv.supplierName || "")}</td>
+            <td class="text-end text-muted">${insightMoney(i.oldCost)}</td>
+            <td class="text-end">${insightMoney(i.unitCost)}</td>
+            <td class="text-end fw-bold ${ch > 0 ? "text-danger" : "text-success"}">${ch > 0 ? "▲" : "▼"} ${Math.abs(ch).toFixed(1)}%</td>
+            <td class="text-end">${price > 0 ? insightMoney(price) : "-"}</td>
+            <td class="text-end">${margin !== null ? `<span class="cd-pill ${bad ? "bad" : "ok"}">${margin.toFixed(1)}%</span>` : "-"}</td>
+        </tr>`;
+    }).join("") : `<tr><td colspan="8"><div class="empty-state"><i class="fas fa-arrow-trend-up"></i>No cost changes yet. They appear when a delivery arrives at a different price.</div></td></tr>`;
+}
+
+/* ---------------------------------------------------------------- add / edit a supplier */
+window.editSupplierId = null;
+
+window.openSupplierModal = (id) => {
+    if (!can("suppliers.manage")) return denyAccess("add or edit suppliers");
+    const s = id ? window.suppliersCache[id] : null;
+    window.editSupplierId = s ? s.id : null;
+    document.getElementById("supName").value = s ? s.name : "";
+    document.getElementById("supPhone").value = s ? (s.phone || "") : "";
+    document.getElementById("supNotes").value = s ? (s.notes || "") : "";
+    document.getElementById("supModalTitle").textContent = s ? "Edit Supplier" : "Add Supplier";
+    bootstrap.Modal.getOrCreateInstance(document.getElementById("supplierModal")).show();
+};
+
+window.saveSupplier = async () => {
+    if (!can("suppliers.manage")) return denyAccess("add or edit suppliers");
+    const name = document.getElementById("supName").value.trim();
+    if (!name) return Swal.fire("Name needed", "Enter the supplier's name.", "warning");
+    const clash = Object.values(window.suppliersCache).find(s => normName(s.name) === normName(name) && s.id !== window.editSupplierId);
+    if (clash) return Swal.fire("Already added", `${clash.name} is already in your suppliers list.`, "info");
+
+    const data = { name, phone: document.getElementById("supPhone").value.trim(), notes: document.getElementById("supNotes").value.trim() };
+    try {
+        if (window.editSupplierId) await writeWithGrace(window.db.collection("suppliers").doc(window.editSupplierId).update(data));
+        else await writeWithGrace(window.db.collection("suppliers").add({ ...data, balance: 0, createdAt: new Date() }));
+        hideModalById("supplierModal");
+        Swal.fire({ icon: "success", title: "Supplier saved", timer: 1400, showConfirmButton: false });
+    } catch (err) {
+        Swal.fire("Could not save", err.message, "error");
+    }
+};
+
+window.deleteSupplier = async (id) => {
+    if (!can("suppliers.delete")) return denyAccess("delete suppliers");
+    const s = window.suppliersCache[id];
+    if (!s) return;
+    if (s.balance > 0) return Swal.fire("You still owe this supplier", `${s.name} is owed ${insightMoney(s.balance)}. Record the payment before deleting them.`, "warning");
+    const res = await Swal.fire({ title: `Delete ${s.name}?`, text: "Their past deliveries stay in the history.", icon: "warning", showCancelButton: true, confirmButtonColor: "#d33", confirmButtonText: "Yes, delete" });
+    if (!res.isConfirmed) return;
+    try {
+        const sup = window.suppliersCache && window.suppliersCache[id];
+        await window.db.collection("suppliers").doc(id).delete();
+        logAudit("delete", "supplier_delete", `Supplier deleted: ${sup ? sup.name : id}`, "", { flag: true });
+    } catch (err) { Swal.fire("Error", err.message, "error"); }
+};
+
+/* ---------------------------------------------------------------- record a delivery */
+window.deliveryLines = [];
+
+window.openDeliveryModal = (supplierId) => {
+    if (!can("deliveries.record")) return denyAccess("record deliveries");
+    const suppliers = Object.values(window.suppliersCache).sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+    if (!suppliers.length) return Swal.fire("Add a supplier first", "Use Add supplier, then come back to record the delivery.", "info");
+
+    document.getElementById("dvSupplier").innerHTML = `<option value="">Choose supplier...</option>` + suppliers.map(s => `<option value="${s.id}">${escHtml(s.name)}</option>`).join("");
+    if (supplierId) document.getElementById("dvSupplier").value = supplierId;
+    document.getElementById("dvDate").value = new Date().toLocaleDateString("en-CA");
+    document.getElementById("dvInvoice").value = "";
+    document.getElementById("dvPaid").value = "";
+    document.getElementById("dvMethod").value = "Cash";
+    document.getElementById("dvNotes").value = "";
+    document.getElementById("dvProductSearch").value = "";
+    document.getElementById("dvProductList").innerHTML = (window.productsCache || []).map(d => `<option value="${escHtml(d.data().name)}"></option>`).join("");
+
+    window.deliveryLines = [];
+    renderDeliveryLines();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById("deliveryModal")).show();
+};
+
+window.addDeliveryLine = (productId) => {
+    const doc = (window.productsCache || []).find(d => d.id === productId);
+    if (!doc) return;
+    const existing = window.deliveryLines.find(l => l.productId === productId);
+    if (existing) existing.qty += 1;
+    else {
+        const p = doc.data();
+        const cost = parseFloat(p.buyPrice) || 0;
+        window.deliveryLines.push({ productId, name: p.name, qty: 1, unitCost: cost, oldCost: cost, price: parseFloat(p.price) || 0 });
+    }
+    renderDeliveryLines();
+};
+
+window.addDeliveryLineFromSearch = () => {
+    const input = document.getElementById("dvProductSearch");
+    const term = normName(input.value);
+    if (!term) return;
+    const doc = (window.productsCache || []).find(d => normName(d.data().name) === term)
+        || (window.productsCache || []).find(d => String(d.data().barcode || "").trim() === input.value.trim())
+        || (window.productsCache || []).filter(d => normName(d.data().name).includes(term))[0];
+    if (!doc) return Swal.fire("Product not found", `No product matches "${input.value}".`, "warning");
+    window.addDeliveryLine(doc.id);
+    input.value = "";
+    input.focus();
+};
+
+window.removeDeliveryLine = (i) => { window.deliveryLines.splice(i, 1); renderDeliveryLines(); };
+
+function deliveryBadgeHTML(line) {
+    const c = deliveryLineCheck(line);
+    let html = "";
+    if (c.changed) html += `<span class="dv-chip ${c.pct > 0 ? "up" : "down"}">cost ${insightMoney(line.oldCost)} → ${insightMoney(line.unitCost)} (${c.pct > 0 ? "▲" : "▼"}${Math.abs(c.pct).toFixed(1)}%)</span>`;
+    if (c.flagged && c.loss) html += `<span class="dv-chip bad"><i class="fas fa-triangle-exclamation"></i> sells at a loss (price ${insightMoney(line.price)}). Sell at ${insightMoney(c.suggest)} or more</span>`;
+    else if (c.flagged && c.low) html += `<span class="dv-chip warn"><i class="fas fa-triangle-exclamation"></i> margin only ${c.margin.toFixed(1)}%. Sell at ${insightMoney(c.suggest)} or more</span>`;
+    return html;
+}
+
+function updateDeliveryLineUI(i) {
+    const line = window.deliveryLines[i];
+    if (!line) return;
+    const badge = document.getElementById(`dvBadge-${i}`);
+    if (badge) badge.innerHTML = deliveryBadgeHTML(line);
+    const total = document.getElementById(`dvLineTotal-${i}`);
+    if (total) total.textContent = insightMoney(line.qty * line.unitCost);
+}
+
+function updateDeliveryTotals() {
+    const total = window.deliveryLines.reduce((n, l) => n + l.qty * l.unitCost, 0);
+    const paid = Math.min(cleanNum((document.getElementById("dvPaid") || {}).value), total);
+    const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+    set("dvTotal", insightMoney(total));
+    set("dvOwing", insightMoney(Math.max(0, total - paid)));
+    set("dvLineCount", `${window.deliveryLines.length} product${window.deliveryLines.length === 1 ? "" : "s"}`);
+}
+
+function renderDeliveryLines() {
+    const body = document.getElementById("dvLines");
+    if (!body) return;
+    body.innerHTML = window.deliveryLines.length ? window.deliveryLines.map((l, i) => `
+        <tr class="dv-row">
+            <td class="dv-c-name"><div class="fw-semibold">${escHtml(l.name)}</div><div class="dv-badges" id="dvBadge-${i}">${deliveryBadgeHTML(l)}</div></td>
+            <td class="dv-c-qty" data-label="Qty"><input type="number" min="0" step="any" class="form-control form-control-sm text-end dv-in" data-i="${i}" data-f="qty" value="${l.qty}"></td>
+            <td class="dv-c-cost" data-label="Cost each"><input type="number" min="0" step="any" class="form-control form-control-sm text-end dv-in" data-i="${i}" data-f="unitCost" value="${l.unitCost}"></td>
+            <td class="dv-c-total text-end fw-semibold text-nowrap" id="dvLineTotal-${i}">${insightMoney(l.qty * l.unitCost)}</td>
+            <td class="dv-c-del"><button type="button" class="btn btn-soft btn-sm btn-icon" onclick="window.removeDeliveryLine(${i})" title="Remove"><i class="fas fa-xmark text-danger"></i></button></td>
+        </tr>`).join("")
+        : `<tr><td colspan="5"><div class="empty-state"><i class="fas fa-box-open"></i>Search or scan a product above to add it to this delivery.</div></td></tr>`;
+    updateDeliveryTotals();
+}
+
+window.onDeliveryInput = (i, field, value) => {
+    const line = window.deliveryLines[i];
+    if (!line) return;
+    line[field] = parseFloat(value) || 0;
+    updateDeliveryLineUI(i);
+    updateDeliveryTotals();
+};
+
+(function bindDeliveryInputs() {
+    const body = document.getElementById("dvLines");
+    if (body) body.addEventListener("input", (e) => {
+        const t = e.target;
+        if (t && t.classList && t.classList.contains("dv-in")) window.onDeliveryInput(Number(t.dataset.i), t.dataset.f, t.value);
+    });
+    const paid = document.getElementById("dvPaid");
+    if (paid) paid.addEventListener("input", updateDeliveryTotals);
+    const search = document.getElementById("dvProductSearch");
+    if (search) search.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); window.addDeliveryLineFromSearch(); } });
+})();
+
+window.payDeliveryInFull = () => {
+    const total = window.deliveryLines.reduce((n, l) => n + l.qty * l.unitCost, 0);
+    document.getElementById("dvPaid").value = cleanNum(total);
+    updateDeliveryTotals();
+};
+
+window.scanForDelivery = () => {
+    window.openScanner({
+        title: "Scan to add to the delivery",
+        continuous: true,
+        onDetect: (code) => {
+            const doc = findProductByBarcode(code);
+            if (!doc) return { ok: false, message: `No product has the barcode ${code}.` };
+            window.addDeliveryLine(doc.id);
+            return { ok: true, message: `Added ${doc.data().name}` };
+        }
+    });
+};
+
+window.saveDelivery = async () => {
+    if (!can("deliveries.record")) return denyAccess("record deliveries");
+    const supplierId = document.getElementById("dvSupplier").value;
+    const supplier = window.suppliersCache[supplierId];
+    if (!supplier) return Swal.fire("Choose a supplier", "Pick who the delivery is from.", "warning");
+    const lines = window.deliveryLines.filter(l => l.qty > 0);
+    if (!lines.length) return Swal.fire("No products", "Add at least one product with a quantity.", "warning");
+    if (lines.some(l => l.unitCost < 0)) return Swal.fire("Check the costs", "A cost cannot be negative.", "warning");
+
+    const total = cleanNum(lines.reduce((n, l) => n + l.qty * l.unitCost, 0));
+    const paid = Math.min(cleanNum(document.getElementById("dvPaid").value), total);
+    const method = document.getElementById("dvMethod").value;
+    const dateStr = document.getElementById("dvDate").value || new Date().toLocaleDateString("en-CA");
+    const now = new Date();
+    const when = new Date(`${dateStr}T${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}:00`);
+    const by = getCurrentUserEmail() || "unknown";
+
+    const checks = lines.map(l => ({ line: l, check: deliveryLineCheck(l) }));
+    const items = lines.map(l => ({ productId: l.productId, name: l.name, qty: l.qty, unitCost: cleanNum(l.unitCost), oldCost: cleanNum(l.oldCost) }));
+
+    try {
+        const batch = window.db.batch();
+        const dvRef = window.db.collection("deliveries").doc();
+        batch.set(dvRef, {
+            supplierId, supplierName: supplier.name, date: when, dateKey: dateStr,
+            invoiceNo: document.getElementById("dvInvoice").value.trim(),
+            items, total, paid, method, notes: document.getElementById("dvNotes").value.trim(),
+            receivedBy: by, createdAt: new Date()
+        });
+
+        checks.forEach(({ line, check }) => {
+            const doc = (window.productsCache || []).find(d => d.id === line.productId);
+            const current = doc ? parseFloat(doc.data().stock) || 0 : 0;
+            const update = { stock: firebase.firestore.FieldValue.increment(line.qty) };
+            if (check.changed) update.buyPrice = cleanNum(line.unitCost);          // the product's cost follows the supplier's price
+            batch.update(window.db.collection("products").doc(line.productId), update);
+            batch.set(window.db.collection("restock_logs").doc(), {
+                productId: line.productId, name: line.name, quantityAdded: line.qty,
+                previousStock: current, afterStock: current + line.qty,
+                reason: `Delivery from ${supplier.name}`, supplierId, restockedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        });
+
+        if (total - paid > 0.004) batch.update(window.db.collection("suppliers").doc(supplierId), { balance: firebase.firestore.FieldValue.increment(cleanNum(total - paid)) });
+        if (paid > 0) {
+            batch.set(window.db.collection("supplier_payments").doc(), {
+                supplierId, supplierName: supplier.name, amount: paid, method, note: "Paid on delivery",
+                deliveryId: dvRef.id, paidBy: by, dateKey: dateStr, at: new Date()
+            });
+        }
+        const confirmed = await writeWithGrace(batch.commit());
+        hideModalById("deliveryModal");
+
+        const flagged = checks.filter(c => c.check.flagged);
+        const changed = checks.filter(c => c.check.changed);
+        const html = `
+            <div class="text-start">
+                <div class="mb-2">${lines.length} product${lines.length === 1 ? "" : "s"} added to stock · total <b>${insightMoney(total)}</b>${total - paid > 0.004 ? ` · you owe <b>${insightMoney(total - paid)}</b>` : " · paid in full"}</div>
+                ${changed.length ? `<div class="fw-semibold mt-3 mb-1">Cost updated for ${changed.length} product${changed.length === 1 ? "" : "s"}</div>` + changed.map(c => `<div class="small">• ${escHtml(c.line.name)}: ${insightMoney(c.line.oldCost)} → ${insightMoney(c.line.unitCost)} (${c.check.pct > 0 ? "▲" : "▼"}${Math.abs(c.check.pct).toFixed(1)}%)</div>`).join("") : ""}
+                ${flagged.length ? `<div class="fw-semibold mt-3 mb-1 text-danger"><i class="fas fa-triangle-exclamation me-1"></i>Check these selling prices</div>` + flagged.map(c => `<div class="small">• <b>${escHtml(c.line.name)}</b> sells for ${insightMoney(c.line.price)}: ${c.check.loss ? "that is a <b>loss</b>" : `margin only ${c.check.margin.toFixed(1)}%`}. Sell at ${insightMoney(c.check.suggest)} or more.</div>`).join("") : ""}
+            </div>`;
+        await Swal.fire({ icon: flagged.length ? "warning" : "success", title: confirmed ? "Delivery recorded" : "Saved on this device", html });
+
+        try {
+            window.notifyDelivery({ supplier: supplier.name, total, paid, count: lines.length, by, changed, flagged });
+        } catch (alertErr) { console.warn("Delivery alert failed:", alertErr); }
+    } catch (err) {
+        Swal.fire("Could not save the delivery", err.message, "error");
+    }
+};
+
+window.notifyDelivery = (d) => {
+    const lines = [`📦 *Delivery received* - ${d.supplier}`, `${d.count} product${d.count === 1 ? "" : "s"}, total KSh ${Math.round(d.total).toLocaleString()}`,
+        d.total - d.paid > 0.004 ? `You owe: KSh ${Math.round(d.total - d.paid).toLocaleString()}` : "Paid in full", `Recorded by: ${d.by}`];
+    d.changed.forEach(c => lines.push(`• ${c.line.name}: cost ${Math.round(c.line.oldCost)} → ${Math.round(c.line.unitCost)} (${c.check.pct > 0 ? "+" : ""}${c.check.pct.toFixed(1)}%)`));
+    d.flagged.forEach(c => lines.push(`⚠️ ${c.line.name}: ${c.check.loss ? "now sells at a LOSS" : "low margin " + c.check.margin.toFixed(1) + "%"} (price ${Math.round(c.line.price)}, needs ${Math.round(c.check.suggest)}+)`));
+    window.sendAlert(lines.join("\n"), "onDelivery");
+};
+
+/* ---------------------------------------------------------------- void a delivery */
+window.voidDelivery = async (id) => {
+    if (!can("suppliers.delete")) return denyAccess("void deliveries");
+    const dv = window.deliveries.find(d => d.id === id);
+    if (!dv) return;
+    if ((parseFloat(dv.paid) || 0) > 0.004) {
+        return Swal.fire("This delivery has payments", "Part or all of it has been paid. Voiding it would leave the payments without a delivery, so it cannot be voided.", "info");
+    }
+    const res = await Swal.fire({
+        title: "Void this delivery?",
+        html: `The stock added by this delivery is taken off again and the ${insightMoney(dv.total)} is removed from what you owe ${escHtml(dv.supplierName || "the supplier")}. Product cost prices stay as they are.`,
+        icon: "warning", showCancelButton: true, confirmButtonColor: "#d33", confirmButtonText: "Yes, void it"
+    });
+    if (!res.isConfirmed) return;
+    try {
+        const batch = window.db.batch();
+        (dv.items || []).forEach(i => {
+            const doc = (window.productsCache || []).find(d => d.id === i.productId);
+            if (!doc) return;
+            const current = parseFloat(doc.data().stock) || 0;
+            batch.update(window.db.collection("products").doc(i.productId), { stock: firebase.firestore.FieldValue.increment(-i.qty) });
+            batch.set(window.db.collection("restock_logs").doc(), {
+                productId: i.productId, name: i.name, quantityAdded: -i.qty, previousStock: current, afterStock: Math.max(0, current - i.qty),
+                reason: `Delivery voided (${dv.supplierName})`, restockedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        });
+        if (window.suppliersCache[dv.supplierId]) {
+            batch.update(window.db.collection("suppliers").doc(dv.supplierId), { balance: firebase.firestore.FieldValue.increment(-cleanNum(dv.total)) });
+        }
+        batch.delete(window.db.collection("deliveries").doc(id));
+        await batch.commit();
+        logAudit("money", "delivery_void", `Delivery voided: ${dv.supplierName || "supplier"}, ${insightMoney(dv.total)}`,
+            (dv.items || []).map(i => `${window.toMixedFraction(i.qty)} × ${i.name}`).join(", "), { amount: dv.total, flag: true });
+        Swal.fire({ icon: "success", title: "Delivery voided", timer: 1600, showConfirmButton: false });
+    } catch (err) {
+        Swal.fire("Could not void", err.message, "error");
+    }
+};
+
+/* ---------------------------------------------------------------- pay a supplier */
+/**
+ * Spreads a payment over the supplier's oldest unpaid deliveries first
+ */
+function allocateSupplierPayment(supplierId, amount) {
+    const unpaid = window.deliveries
+        .filter(d => d.supplierId === supplierId && (parseFloat(d.paid) || 0) < (parseFloat(d.total) || 0) - 0.005)
+        .sort((a, b) => toDate(a.date) - toDate(b.date));
+    let left = amount;
+    const updates = [];
+    for (const d of unpaid) {
+        if (left <= 0.004) break;
+        const paid = parseFloat(d.paid) || 0, total = parseFloat(d.total) || 0;
+        const apply = Math.min(total - paid, left);
+        updates.push({ id: d.id, paid: cleanNum(paid + apply) });
+        left -= apply;
+    }
+    return updates;
+}
+
+window.openSupplierPayment = (id) => {
+    if (!can("suppliers.pay")) return denyAccess("pay suppliers");
+    const s = window.suppliersCache[id];
+    if (!s) return;
+    window.supplierPayId = id;
+    document.getElementById("spName").textContent = s.name;
+    document.getElementById("spBalance").textContent = insightMoney(s.balance);
+    document.getElementById("spAmount").value = "";
+    document.getElementById("spMethod").value = "Cash";
+    document.getElementById("spNote").value = "";
+    bootstrap.Modal.getOrCreateInstance(document.getElementById("supplierPayModal")).show();
+};
+
+window.fillSupplierPaymentFull = () => {
+    const s = window.suppliersCache[window.supplierPayId];
+    if (s) document.getElementById("spAmount").value = s.balance;
+};
+
+window.saveSupplierPayment = async () => {
+    if (!can("suppliers.pay")) return denyAccess("pay suppliers");
+    const id = window.supplierPayId;
+    const s = window.suppliersCache[id];
+    if (!s) return;
+    const amount = cleanNum(document.getElementById("spAmount").value);
+    if (amount <= 0) return Swal.fire("Enter an amount", "Type how much you paid.", "warning");
+    if (amount > s.balance + 0.005) return Swal.fire("Too much", `You only owe ${s.name} ${insightMoney(s.balance)}.`, "warning");
+
+    try {
+        const batch = window.db.batch();
+        const method = document.getElementById("spMethod").value;
+        batch.set(window.db.collection("supplier_payments").doc(), {
+            supplierId: id, supplierName: s.name, amount, method, note: document.getElementById("spNote").value.trim(),
+            paidBy: getCurrentUserEmail() || "unknown", dateKey: new Date().toLocaleDateString("en-CA"), at: new Date()
+        });
+        allocateSupplierPayment(id, amount).forEach(u => batch.update(window.db.collection("deliveries").doc(u.id), { paid: u.paid }));
+        batch.update(window.db.collection("suppliers").doc(id), { balance: firebase.firestore.FieldValue.increment(-amount) });
+        const confirmed = await writeWithGrace(batch.commit());
+        hideModalById("supplierPayModal");
+        const left = Math.max(0, s.balance - amount);
+        Swal.fire({ icon: "success", title: confirmed ? "Payment recorded" : "Saved on this device", text: `${insightMoney(amount)} paid to ${s.name}. ${left > 0 ? "Still owed: " + insightMoney(left) : "Nothing owed now."}` });
+    } catch (err) {
+        Swal.fire("Could not save the payment", err.message, "error");
+    }
+};
+
+/* ---------------------------------------------------------------- supplier statement */
+window.openSupplierStatement = (id) => {
+    if (!can("suppliers.view")) return denyAccess("see suppliers");
+    const s = window.suppliersCache[id];
+    if (!s) return;
+    const entries = [];
+    window.deliveries.filter(d => d.supplierId === id).forEach(d => entries.push({
+        date: toDate(d.date), desc: `Delivery${d.invoiceNo ? " (invoice " + d.invoiceNo + ")" : ""}: ${(d.items || []).map(i => `${window.toMixedFraction(i.qty)} x ${i.name}`).join(", ")}`, debit: parseFloat(d.total) || 0, credit: 0
+    }));
+    window.supplierPayments.filter(p => p.supplierId === id).forEach(p => entries.push({
+        date: toDate(p.at), desc: `Payment (${p.method})${p.note ? " - " + p.note : ""}`, debit: 0, credit: parseFloat(p.amount) || 0
+    }));
+    entries.sort((a, b) => b.date - a.date);
+    const totalDebit = entries.reduce((n, e) => n + e.debit, 0), totalCredit = entries.reduce((n, e) => n + e.credit, 0);
+    window.currentSupplierStatement = { supplier: s, entries, totalDebit, totalCredit };
+
+    document.getElementById("ssName").textContent = s.name + (s.phone ? " · " + s.phone : "");
+    document.getElementById("ssBalance").textContent = insightMoney(s.balance);
+    document.getElementById("ssBalance").className = "fw-bold fs-5 " + (s.balance > 0 ? "text-danger" : "text-success");
+    document.getElementById("ssBody").innerHTML = entries.length ? entries.map(e => `
+        <tr><td class="text-nowrap">${shortDate(e.date)}</td><td>${escHtml(e.desc)}</td>
+        <td class="text-end">${e.debit ? insightMoney(e.debit) : ""}</td><td class="text-end text-success">${e.credit ? insightMoney(e.credit) : ""}</td></tr>`).join("")
+        : `<tr><td colspan="4"><div class="empty-state"><i class="fas fa-file-lines"></i>Nothing recorded yet.</div></td></tr>`;
+    document.getElementById("ssTotals").innerHTML = entries.length ? `<tr><th colspan="2">Totals</th><th class="text-end">${insightMoney(totalDebit)}</th><th class="text-end">${insightMoney(totalCredit)}</th></tr>` : "";
+    bootstrap.Modal.getOrCreateInstance(document.getElementById("supplierStatementModal")).show();
+};
+
+window.downloadSupplierStatement = () => {
+    const st = window.currentSupplierStatement;
+    if (!st) return;
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    doc.setFontSize(20); doc.setTextColor(41, 128, 185);
+    doc.text("MADOLLAR LIQUOR PUB", 105, 15, null, null, "center");
+    doc.setFontSize(14); doc.setTextColor(0);
+    doc.text("Supplier Statement", 105, 24, null, null, "center");
+    doc.setFontSize(11);
+    doc.text(`Supplier: ${st.supplier.name}${st.supplier.phone ? " (" + st.supplier.phone + ")" : ""}`, 14, 36);
+    doc.text(`Date: ${new Date().toLocaleDateString("en-GB")}`, 14, 43);
+    doc.text(`We owe: ${insightMoney(st.supplier.balance)}`, 14, 50);
+    doc.autoTable({
+        startY: 58, head: [["Date", "Details", "Delivered (KSh)", "Paid (KSh)"]],
+        body: st.entries.map(e => [shortDate(e.date), e.desc, e.debit ? e.debit.toLocaleString() : "", e.credit ? e.credit.toLocaleString() : ""]),
+        foot: [["", "Totals", st.totalDebit.toLocaleString(), st.totalCredit.toLocaleString()]],
+        theme: "striped", headStyles: { fillColor: [41, 128, 185] }, styles: { fontSize: 9, cellPadding: 3 }
+    });
+    doc.save(`Supplier_${st.supplier.name.replace(/\s+/g, "_")}.pdf`);
+};
+
+
+/* ====================================================================== DEBT REMINDERS */
+const DEFAULT_REMINDER_TEXT = "Hello {name}, this is a friendly reminder from Madollar Liquor Pub. Your tab balance is KSh {balance}. Please settle when you can. You can pay by M-PESA to Till 3234719. Thank you!";
+window.reminderTemplate = DEFAULT_REMINDER_TEXT;
+window.reminderOnly = null;
+
+window.db.collection("settings").doc("reminders").onSnapshot(doc => {
+    if (doc.exists && doc.data().template) window.reminderTemplate = doc.data().template;
+}, err => console.warn("Reminders settings listener:", err));
+
+function debtorsList() {
+    return Object.values(window.customersCache || {})
+        .filter(c => c.balance > 0)
+        .sort((a, b) => {
+            const ta = a.lastReminderAt ? a.lastReminderAt.getTime() : 0, tb = b.lastReminderAt ? b.lastReminderAt.getTime() : 0;
+            return ta - tb || b.balance - a.balance;      // never reminded first, then longest ago, then biggest debt
+        });
+}
+
+window.reminderText = (c, template) => {
+    const t = template !== undefined ? template : ((document.getElementById("rmTemplate") || {}).value || window.reminderTemplate);
+    return String(t || window.reminderTemplate)
+        .replace(/\{name\}/g, c.name || "")
+        .replace(/\{balance\}/g, Number(c.balance).toLocaleString(undefined, { maximumFractionDigits: 2 }));
+};
+
+function reminderAgo(date) {
+    if (!date) return "Never reminded";
+    const days = Math.floor((Date.now() - date.getTime()) / 86400000);
+    return days <= 0 ? "Reminded today" : `Reminded ${days} day${days === 1 ? "" : "s"} ago`;
+}
+
+window.openReminders = (customerId) => {
+    if (!can("customers.remind")) return denyAccess("send reminders");
+    window.reminderOnly = customerId || null;
+    document.getElementById("rmTemplate").value = window.reminderTemplate;
+    document.getElementById("rmSaveDefaultBtn").classList.toggle("d-none", !isAdmin());
+    window.renderReminderList();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById("remindersModal")).show();
+};
+
+window.renderReminderList = () => {
+    const box = document.getElementById("rmList");
+    if (!box) return;
+    let list = debtorsList();
+    const totalAll = list.reduce((n, c) => n + c.balance, 0);
+    if (window.reminderOnly) list = list.filter(c => c.id === window.reminderOnly);
+
+    const summary = document.getElementById("rmSummary");
+    if (summary) {
+        summary.innerHTML = window.reminderOnly
+            ? `<a href="#" onclick="event.preventDefault(); window.reminderOnly = null; window.renderReminderList()"><i class="fas fa-users me-1"></i>Show everyone who owes money</a>`
+            : (list.length ? `<b>${list.length}</b> customer${list.length === 1 ? "" : "s"} owe <b>${insightMoney(totalAll)}</b> in total` : "No customer owes money.");
+    }
+
+    box.innerHTML = list.length ? list.map(c => {
+        const phone = normalizePhone(c.phone);
+        const ok = phone.length >= 10;
+        return `
+            <div class="rm-row">
+                <div class="rm-who">
+                    <b>${escHtml(c.name)}</b>
+                    <small>${ok ? escHtml(c.phone) : '<span class="text-danger">No valid phone number</span>'} · ${reminderAgo(c.lastReminderAt)}</small>
+                </div>
+                <div class="rm-amount">${insightMoney(c.balance)}</div>
+                <div class="rm-buttons">
+                    <button class="btn btn-sm rm-wa" ${ok ? "" : "disabled"} onclick="window.sendReminder('${c.id}', 'whatsapp')" title="Open WhatsApp with the message ready"><i class="fab fa-whatsapp me-1"></i>WhatsApp</button>
+                    <button class="btn btn-sm btn-soft" ${ok ? "" : "disabled"} onclick="window.sendReminder('${c.id}', 'sms')" title="Open the SMS app with the message ready"><i class="fas fa-message me-1"></i>SMS</button>
+                    <button class="btn btn-sm btn-soft btn-icon" onclick="window.sendReminder('${c.id}', 'copy')" title="Copy the message"><i class="far fa-copy"></i></button>
+                </div>
+            </div>`;
+    }).join("") : `<div class="empty-state"><i class="fas fa-circle-check"></i>Nobody to remind.</div>`;
+};
+
+window.sendReminder = async (customerId, channel) => {
+    if (!can("customers.remind")) return denyAccess("send reminders");
+    const c = window.customersCache[customerId];
+    if (!c) return;
+    const text = window.reminderText(c);
+
+    if (channel === "copy") {
+        try { await navigator.clipboard.writeText(text); Swal.fire({ toast: true, position: "top", icon: "success", title: "Message copied", timer: 1500, showConfirmButton: false }); }
+        catch (e) { Swal.fire("Could not copy", "Your browser blocked copying.", "info"); }
+        return;
+    }
+
+    const phone = normalizePhone(c.phone);
+    if (phone.length < 10) return Swal.fire("No phone number", `${c.name} has no valid phone number saved.`, "info");
+
+    if (channel === "whatsapp") window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, "_blank");
+    else window.location.href = `sms:+${phone}?body=${encodeURIComponent(text)}`;
+
+    // remember when they were last reminded
+    c.lastReminderAt = new Date();
+    window.renderReminderList();
+    window.db.collection("customers").doc(customerId).update({
+        lastReminderAt: new Date(), reminderCount: firebase.firestore.FieldValue.increment(1)
+    }).catch(err => console.warn("Could not record the reminder:", err));
+};
+
+window.saveReminderTemplate = async () => {
+    if (!isAdmin()) return denyAccess("change the reminder message");
+    const template = document.getElementById("rmTemplate").value.trim();
+    if (!template) return Swal.fire("Message needed", "The reminder message cannot be empty.", "warning");
+    try {
+        await window.db.collection("settings").doc("reminders").set({ template, updatedAt: new Date() });
+        window.reminderTemplate = template;
+        Swal.fire({ toast: true, position: "top", icon: "success", title: "Saved as the standard message", timer: 1800, showConfirmButton: false });
+    } catch (err) {
+        Swal.fire("Could not save", err.message, "error");
+    }
+};
+
+
+/* ====================================================================== BARCODE SCANNING */
+function findProductByBarcode(code) {
+    const c = String(code || "").trim();
+    if (!c) return null;
+    return (window.productsCache || []).find(d => String(d.data().barcode || "").trim() === c) || null;
+}
+
+function barcodeInUse(code, exceptId) {
+    const c = String(code || "").trim();
+    return !!c && (window.productsCache || []).some(d => d.id !== exceptId && String(d.data().barcode || "").trim() === c);
+}
+
+window.scanner = { stream: null, reader: null, timer: null, onDetect: null, continuous: false, lastCode: "", lastAt: 0, running: false };
+
+function loadZXing() {
+    return new Promise((resolve, reject) => {
+        if (window.ZXing) return resolve();
+        const tag = document.createElement("script");
+        tag.src = "https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js";
+        tag.onload = () => resolve();
+        tag.onerror = () => reject(new Error("Could not load the barcode reader. Check your internet connection."));
+        document.head.appendChild(tag);
+    });
+}
+
+function setScanStatus(text, kind) {
+    const el = document.getElementById("scanStatus");
+    if (!el) return;
+    el.textContent = text;
+    el.className = "scan-status" + (kind ? " " + kind : "");
+}
+
+/**
+ * Opens the camera scanner. opts = { title, onDetect(code) -> {ok, message, close}, continuous }
+ */
+window.openScanner = async (opts) => {
+    const sc = window.scanner;
+    sc.onDetect = opts.onDetect;
+    sc.continuous = !!opts.continuous;
+    sc.lastCode = ""; sc.lastAt = 0;
+    document.getElementById("scanTitle").textContent = opts.title || "Scan a barcode";
+    document.getElementById("scanUnknown").classList.add("d-none");
+    document.getElementById("scanLog").innerHTML = "";
+    document.getElementById("scanManual").value = "";
+    setScanStatus("Starting the camera...");
+    bootstrap.Modal.getOrCreateInstance(document.getElementById("scannerModal")).show();
+    await startScanner();
+};
+
+async function startScanner() {
+    const sc = window.scanner;
+    const video = document.getElementById("scanVideo");
+    stopScanner();
+    try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error("This browser cannot use the camera here. You can still type the barcode below.");
+        if ("BarcodeDetector" in window) {
+            sc.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
+            video.srcObject = sc.stream;
+            await video.play();
+            const detector = new window.BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "itf"] });
+            sc.running = true;
+            sc.timer = setInterval(async () => {
+                if (!sc.running || video.readyState < 2) return;
+                try {
+                    const found = await detector.detect(video);
+                    if (found && found.length) window.handleScan(found[0].rawValue);
+                } catch (e) { /* a frame without a readable code */ }
+            }, 250);
+        } else {
+            await loadZXing();
+            sc.reader = new window.ZXing.BrowserMultiFormatReader();
+            sc.running = true;
+            sc.reader.decodeFromVideoDevice(null, video, (result) => { if (result) window.handleScan(result.getText()); });
+        }
+        setScanStatus("Point the camera at a barcode");
+    } catch (err) {
+        setScanStatus(err && err.name === "NotAllowedError" ? "Camera permission was denied. Allow the camera for this site, or type the barcode below." : (err.message || "Could not open the camera. You can type the barcode below."), "bad");
+    }
+}
+
+function stopScanner() {
+    const sc = window.scanner;
+    sc.running = false;
+    if (sc.timer) { clearInterval(sc.timer); sc.timer = null; }
+    if (sc.stream) { sc.stream.getTracks().forEach(t => t.stop()); sc.stream = null; }
+    if (sc.reader) { try { sc.reader.reset(); } catch (e) { } sc.reader = null; }
+    const video = document.getElementById("scanVideo");
+    if (video) { try { video.srcObject = null; } catch (e) { } }
+}
+window.stopScanner = stopScanner;
+
+(function bindScannerModal() {
+    const modalEl = document.getElementById("scannerModal");
+    if (modalEl) modalEl.addEventListener("hidden.bs.modal", stopScanner);
+    const manual = document.getElementById("scanManual");
+    if (manual) manual.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); window.submitManualScan(); } });
+})();
+
+window.closeScanner = () => { stopScanner(); hideModalById("scannerModal"); };
+
+window.submitManualScan = () => {
+    const input = document.getElementById("scanManual");
+    const code = (input.value || "").trim();
+    if (!code) return;
+    input.value = "";
+    window.handleScan(code, true);
+};
+
+/**
+ * One barcode has been read (by the camera, a barcode reader, or typed). Repeats of the same code within 1.5s are ignored.
+ */
+window.handleScan = (rawCode, forced) => {
+    const sc = window.scanner;
+    const code = String(rawCode || "").trim();
+    if (!code || !sc.onDetect) return;
+    const now = Date.now();
+    if (!forced && code === sc.lastCode && now - sc.lastAt < 1500) return;
+    sc.lastCode = code; sc.lastAt = now;
+
+    const res = sc.onDetect(code) || {};
+    const log = document.getElementById("scanLog");
+    if (res.ok) {
+        setScanStatus(res.message || "Scanned", "ok");
+        if (log) log.insertAdjacentHTML("afterbegin", `<div class="scan-log-item"><i class="fas fa-check text-success me-2"></i>${escHtml(res.message || code)}</div>`);
+        try { new Audio("https://actions.google.com/sounds/v1/ui/beep_short.ogg").play(); } catch (e) { }
+        if (res.close || !sc.continuous) window.closeScanner();
+    } else if (res.unknown) {
+        setScanStatus(res.message || `Barcode ${code} is not linked to a product yet`, "warn");
+        window.showUnknownBarcode(code);
+    } else {
+        setScanStatus(res.message || "Not recognised", "bad");
+    }
+};
+
+/* ---- unknown barcode: link it to a product on the spot ---- */
+window.showUnknownBarcode = (code) => {
+    window.scanner.unknownCode = code;
+    document.getElementById("scanUnknownCode").textContent = code;
+    document.getElementById("scanUnknownList").innerHTML = (window.productsCache || []).map(d => `<option value="${escHtml(d.data().name)}"></option>`).join("");
+    document.getElementById("scanUnknownProduct").value = "";
+    document.getElementById("scanUnknownSave").classList.toggle("d-none", !can("products.edit"));
+    document.getElementById("scanUnknownNote").classList.toggle("d-none", can("products.edit"));
+    document.getElementById("scanUnknown").classList.remove("d-none");
+};
+
+window.linkUnknownBarcode = async () => {
+    if (!can("products.edit")) return denyAccess("edit products");
+    const code = window.scanner.unknownCode;
+    const term = normName(document.getElementById("scanUnknownProduct").value);
+    const doc = (window.productsCache || []).find(d => normName(d.data().name) === term);
+    if (!doc) return Swal.fire("Choose a product", "Pick the product from the list.", "warning");
+    if (barcodeInUse(code, doc.id)) return Swal.fire("Barcode already used", "That barcode already belongs to another product.", "warning");
+    try {
+        await writeWithGrace(window.db.collection("products").doc(doc.id).update({ barcode: code }));
+        doc.data = (orig => () => ({ ...orig(), barcode: code }))(doc.data);     // use it straight away, before the list refreshes
+        document.getElementById("scanUnknown").classList.add("d-none");
+        window.handleScan(code, true);
+    } catch (err) {
+        Swal.fire("Could not save", err.message, "error");
+    }
+};
+
+/* ---- fill a text box from the camera (product forms) ---- */
+window.scanInto = (inputId) => {
+    window.openScanner({
+        title: "Scan the barcode on the bottle",
+        onDetect: (code) => {
+            document.getElementById(inputId).value = code;
+            if (inputId === "prodBarcode") window.lookupBarcodeName(code);
+            return { ok: true, message: `Barcode ${code} captured`, close: true };
+        }
+    });
+};
+
+/* ---- new product: try to fill the name/category from a public product database ---- */
+function guessCategory(tags) {
+    const t = (tags || []).join(" ").toLowerCase();
+    const rules = [[/beer|lager|stout|cider/, "Beer"], [/wine|champagne/, "Wine"], [/whisk|vodka|gin\b|rum\b|brandy|liqueur|tequila|spirit/, "Spirits"],
+                   [/water|soda|juice|soft-drink|beverages-and-beverages-preparations|sweetened-beverages|energy/, "Soft drinks"]];
+    for (const [re, name] of rules) if (re.test(t)) return name;
+    return "";
+}
+
+window.lookupBarcodeName = async (code) => {
+    code = String(code || "").trim();
+    const note = document.getElementById("prodBarcodeNote");
+    const nameEl = document.getElementById("prodName");
+    const catEl = document.getElementById("prodCategory");
+    if (!note || !nameEl || !/^\d{6,14}$/.test(code)) { if (note) note.textContent = ""; return; }
+    if (barcodeInUse(code, null)) { note.textContent = "A product in your list already uses this barcode."; return; }
+    if (!navigator.onLine) { note.textContent = "No internet, so the name could not be looked up. Type it in."; return; }
+    note.textContent = "Looking up the product name...";
+    try {
+        const ctl = new AbortController();
+        const timer = setTimeout(() => ctl.abort(), 6000);
+        const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json?fields=product_name,brands,quantity,categories_tags`, { signal: ctl.signal });
+        clearTimeout(timer);
+        const data = await res.json();
+        const p = data && data.status === 1 ? data.product : null;
+        const found = p && (p.product_name || "").trim();
+        if (!found) { note.textContent = "This barcode was not found in the product database. Type the name in."; return; }
+        const brand = (p.brands || "").split(",")[0].trim();
+        let name = found;
+        if (brand && !name.toLowerCase().includes(brand.toLowerCase())) name = brand + " " + name;
+        const qty = (p.quantity || "").replace(/\s+/g, "");
+        if (qty && !name.replace(/\s+/g, "").toLowerCase().includes(qty.toLowerCase())) name += " " + qty;
+        name = name.toUpperCase();
+        const filled = [];
+        if (!nameEl.value.trim()) { nameEl.value = name; filled.push("name"); }
+        const cat = guessCategory(p.categories_tags);
+        if (cat && catEl && !catEl.value.trim()) { catEl.value = cat; filled.push("category"); }
+        note.textContent = filled.length ? `Found "${name}". Filled in the ${filled.join(" and ")}, please check it.` : `Found "${name}", but you had already typed this in.`;
+    } catch (e) {
+        note.textContent = "Could not look the name up. Type it in.";
+    }
+};
+
+(function bindBarcodeLookup() {
+    const input = document.getElementById("prodBarcode");
+    if (input) input.addEventListener("change", () => window.lookupBarcodeName(input.value));
+})();
+
+/* ---- POS: scan a bottle to add it to the cart ---- */
+window.openPosScanner = () => {
+    if (!can("pos.sell")) return denyAccess("make sales");
+    window.openScanner({
+        title: "Scan bottles to add them to the cart",
+        continuous: true,
+        onDetect: (code) => {
+            const doc = findProductByBarcode(code);
+            if (!doc) return { ok: false, unknown: true, message: `Barcode ${code} is not linked to a product yet` };
+            const added = addProductToCart(doc, 1, false, true);
+            if (!added) return { ok: false, message: `${doc.data().name} could not be added (see the message)` };
+            const inCart = cart.filter(c => c.id === doc.id && !c.unit).reduce((n, c) => n + c.qty, 0);
+            return { ok: true, message: `${doc.data().name} · ${window.toMixedFraction(inCart)} in the cart` };
+        }
+    });
+};
+
+// A barcode reader (USB or Bluetooth) types the number and presses Enter: if the box holds a known barcode, add that product
+(function bindPosBarcodeEnter() {
+    const box = document.getElementById("productSearch");
+    if (!box) return;
+    box.addEventListener("keydown", (e) => {
+        if (e.key !== "Enter") return;
+        const doc = findProductByBarcode(box.value);
+        if (!doc) return;
+        e.preventDefault();
+        if (addProductToCart(doc, 1, false, true)) {
+            box.value = "";
+            const results = document.getElementById("productResults");
+            if (results) results.style.display = "none";
+        }
+    });
+})();
+
+
+/* ==========================================================================
+   SECTION 12H: TILL PRICE CHANGES & DISCOUNTS, REFUNDS AND THE AUDIT TRAIL
+   ========================================================================== */
+
+const PRICE_REASONS = ["Regular customer", "Damaged or old stock", "Price agreed with the customer", "Promotion / happy hour", "Wrong price in the system", "Approved by the manager", "Other"];
+const REFUND_REASONS = ["Wrong item sold", "Customer changed their mind", "Damaged or spoiled", "Cashier made a mistake", "Wrong price charged", "Other"];
+
+function fillReasonSelect(selectId, list) {
+    const sel = document.getElementById(selectId);
+    if (!sel) return;
+    sel.innerHTML = `<option value="">Choose a reason...</option>` + list.map(r => `<option>${escHtml(r)}</option>`).join("");
+}
+
+window.onReasonChange = (selectId, otherId) => {
+    const sel = document.getElementById(selectId);
+    const other = document.getElementById(otherId);
+    if (other) other.classList.toggle("d-none", !(sel && sel.value === "Other"));
+};
+
+/** The reason the person picked or typed. Empty when they have not given one yet. */
+function readReason(selectId, otherId) {
+    const sel = document.getElementById(selectId);
+    const v = sel ? sel.value : "";
+    if (!v) return "";
+    if (v === "Other") return ((document.getElementById(otherId) || {}).value || "").trim();
+    return v;
+}
+
+function resetReason(selectId, otherId) {
+    const sel = document.getElementById(selectId);
+    const other = document.getElementById(otherId);
+    if (sel) sel.value = "";
+    if (other) { other.value = ""; other.classList.add("d-none"); }
+}
+
+fillReasonSelect("pcReason", PRICE_REASONS);
+fillReasonSelect("dcReason", PRICE_REASONS);
+fillReasonSelect("rfReason", REFUND_REASONS);
+
+/** What one unit of a cart line cost you (a tot costs its share of the bottle). null when the product is unknown. */
+function unitCostForCartLine(c) {
+    const doc = (window.productsCache || []).find(p => p.id === c.id);
+    if (!doc) return null;
+    const p = doc.data();
+    const bottle = parseFloat(p.buyPrice) || 0;
+    const tots = parseFloat(p.totsPerBottle) || parseFloat(c.totsPerBottle) || 0;
+    return c.unit === "tot" && tots > 0 ? bottle / tots : bottle;
+}
+
+/* ---------------------------------------------------------------- change one item's price */
+window.priceEditIndex = null;
+
+window.openPriceModal = (i) => {
+    if (!can("pos.priceoverride")) return denyAccess("change prices at the till");
+    const c = cart[i];
+    if (!c) return;
+    window.priceEditIndex = i;
+    const list = c.listPrice !== undefined ? c.listPrice : c.price;
+    document.getElementById("pcProduct").textContent = itemLabel(c);
+    document.getElementById("pcList").textContent = insightMoney(list);
+    document.getElementById("pcNew").value = c.price;
+    resetReason("pcReason", "pcReasonOther");
+    document.getElementById("pcResetBtn").classList.toggle("d-none", c.listPrice === undefined);
+    window.updatePricePreview();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById("priceModal")).show();
+};
+
+window.updatePricePreview = () => {
+    const c = cart[window.priceEditIndex];
+    const hint = document.getElementById("pcHint");
+    if (!c || !hint) return;
+    const list = c.listPrice !== undefined ? c.listPrice : c.price;
+    const raw = document.getElementById("pcNew").value;
+    if (raw === "") { hint.innerHTML = ""; return; }
+    const n = parseFloat(raw);
+    if (isNaN(n) || n < 0) { hint.innerHTML = `<span class="text-danger">Enter a price of 0 or more.</span>`; return; }
+    const diff = round2(n - list);
+    const parts = [];
+    if (diff < 0) parts.push(`<span class="text-warning"><i class="fas fa-arrow-down me-1"></i>${insightMoney(-diff)} less each, ${insightMoney(-diff * c.qty)} less in total</span>`);
+    else if (diff > 0) parts.push(`<span class="text-info"><i class="fas fa-arrow-up me-1"></i>${insightMoney(diff)} more each</span>`);
+    const cost = unitCostForCartLine(c);
+    if (cost !== null && cost > 0 && n < cost) {
+        parts.push(can("view.buyPrices")
+            ? `<span class="text-danger"><i class="fas fa-triangle-exclamation me-1"></i>Below the buying price (${insightMoney(cost)}): you lose ${insightMoney(cost - n)} on each.</span>`
+            : `<span class="text-danger"><i class="fas fa-triangle-exclamation me-1"></i>This is below what the item cost you.</span>`);
+    }
+    hint.innerHTML = parts.join("<br>");
+};
+
+window.savePriceChange = () => {
+    if (!can("pos.priceoverride")) return denyAccess("change prices at the till");
+    const c = cart[window.priceEditIndex];
+    if (!c) return;
+    const n = round2(parseFloat(document.getElementById("pcNew").value));
+    if (isNaN(n) || n < 0) return Swal.fire("Price needed", "Enter the new price for one unit.", "warning");
+    const list = c.listPrice !== undefined ? c.listPrice : c.price;
+    if (n === list) return window.resetPriceChange();
+    const reason = readReason("pcReason", "pcReasonOther");
+    if (!reason) return Swal.fire("Reason needed", "Choose or type why the price is different. It is recorded with your name.", "warning");
+    c.listPrice = list;
+    c.price = n;
+    c.priceReason = reason;
+    hideModalById("priceModal");
+    renderCart();
+};
+
+window.resetPriceChange = () => {
+    const c = cart[window.priceEditIndex];
+    if (c && c.listPrice !== undefined) {
+        c.price = c.listPrice;
+        delete c.listPrice;
+        delete c.priceReason;
+    }
+    hideModalById("priceModal");
+    renderCart();
+};
+
+/* ---------------------------------------------------------------- discount on the whole cart */
+window.dcKind = "percent";
+
+window.openDiscountModal = () => {
+    if (!can("pos.discount")) return denyAccess("give discounts");
+    if (!cart.length) return Swal.fire("The cart is empty", "Add the items first, then give the discount.", "info");
+    document.getElementById("dcSubtotal").textContent = insightMoney(cartSubtotal());
+    document.getElementById("dcValue").value = cartDiscount ? cartDiscount.value : "";
+    resetReason("dcReason", "dcReasonOther");
+    document.getElementById("dcRemoveBtn").classList.toggle("d-none", !cartDiscount);
+    window.setDiscountKind(cartDiscount ? cartDiscount.kind : "percent");
+    bootstrap.Modal.getOrCreateInstance(document.getElementById("discountModal")).show();
+};
+
+window.setDiscountKind = (kind) => {
+    window.dcKind = kind;
+    document.getElementById("dcKindPercent").classList.toggle("active", kind === "percent");
+    document.getElementById("dcKindAmount").classList.toggle("active", kind === "amount");
+    document.getElementById("dcUnit").textContent = kind === "percent" ? "%" : "KSh";
+    window.updateDiscountPreview();
+};
+
+window.updateDiscountPreview = () => {
+    const out = document.getElementById("dcPreview");
+    const sub = cartSubtotal();
+    const raw = document.getElementById("dcValue").value;
+    if (raw === "") { out.innerHTML = ""; return; }
+    const v = parseFloat(raw);
+    if (isNaN(v) || v <= 0) { out.innerHTML = `<span class="text-danger">Enter a number above 0.</span>`; return; }
+    if (window.dcKind === "percent" && v > 100) { out.innerHTML = `<span class="text-danger">A percentage cannot be more than 100.</span>`; return; }
+    const amt = discountAmountFor(window.dcKind, v, sub);
+    if (window.dcKind === "amount" && v > sub) { out.innerHTML = `<span class="text-danger">That is more than the whole cart (${insightMoney(sub)}).</span>`; return; }
+    out.innerHTML = `<div class="d-flex justify-content-between"><span>Discount</span><b>− ${insightMoney(amt)}</b></div>
+        <div class="d-flex justify-content-between"><span>New total</span><b>${insightMoney(sub - amt)}</b></div>`;
+};
+
+window.saveDiscount = () => {
+    if (!can("pos.discount")) return denyAccess("give discounts");
+    const v = parseFloat(document.getElementById("dcValue").value);
+    const sub = cartSubtotal();
+    if (isNaN(v) || v <= 0) return Swal.fire("Discount needed", "Enter how much to take off.", "warning");
+    if (window.dcKind === "percent" && v > 100) return Swal.fire("Too much", "A percentage cannot be more than 100.", "warning");
+    if (window.dcKind === "amount" && v > sub) return Swal.fire("Too much", "The discount cannot be more than the whole cart.", "warning");
+    const reason = readReason("dcReason", "dcReasonOther");
+    if (!reason) return Swal.fire("Reason needed", "Choose or type why the discount is given. It is recorded with your name.", "warning");
+    cartDiscount = { kind: window.dcKind, value: v, reason };
+    hideModalById("discountModal");
+    renderCart();
+};
+
+window.removeDiscount = () => {
+    cartDiscount = null;
+    hideModalById("discountModal");
+    renderCart();
+};
+
+/* ---------------------------------------------------------------- refunds and returns */
+window.refundState = null;
+window.refundsList = [];
+
+window.db.collection("refunds").orderBy("date", "desc").limit(300).onSnapshot(snap => {
+    window.refundsList = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}, err => console.warn("Refunds listener:", err));
+
+window.openRefundModal = (saleId) => {
+    if (!can("pos.refund")) return denyAccess("give refunds");
+    const sale = (window.allSales || []).find(s => s.id === saleId);
+    if (!sale || !sale.items || !sale.items.length) return Swal.fire("Nothing to refund", "Every item of this sale has already been refunded.", "info");
+    if (sale._pending) return Swal.fire("Not saved yet", "This sale is still waiting to reach the server. Wait until the 'Not synced' tag disappears, then refund it.", "info");
+
+    window.refundState = { saleId, qty: sale.items.map(() => 0), restock: sale.items.map(() => true) };
+    const onTab = sale.payment === "Credit";
+    document.getElementById("rfSummary").innerHTML = `<b>${escHtml(sale.customer || "Guest")}</b> · ${sale.date.toDate().toLocaleString([], { dateStyle: "medium", timeStyle: "short" })} · ${escHtml(sale.payment || "Cash")} · <b>${insightMoney(sale.total)}</b>`;
+    document.getElementById("rfMethodWrap").classList.toggle("d-none", onTab);
+    document.getElementById("rfCreditNote").classList.toggle("d-none", !onTab);
+    const methodEl = document.getElementById("rfMethod");
+    methodEl.value = Array.from(methodEl.options).some(o => o.value === sale.payment) ? sale.payment : "Cash";
+    resetReason("rfReason", "rfReasonOther");
+    renderRefundLines();
+    updateRefundTotal();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById("refundModal")).show();
+};
+
+function refundSale() {
+    return window.refundState ? (window.allSales || []).find(s => s.id === window.refundState.saleId) : null;
+}
+
+function renderRefundLines() {
+    const sale = refundSale();
+    const body = document.getElementById("rfLines");
+    if (!sale || !body) return;
+    const st = window.refundState;
+    body.innerHTML = sale.items.map((it, i) => `
+        <div class="rf-line">
+            <div class="rf-name"><b>${escHtml(itemLabel(it))}</b><small>${window.toMixedFraction(parseFloat(it.qty) || 0)} sold at ${insightMoney(it.price)}</small></div>
+            <div class="rf-qty"><label>Take back</label><input type="number" min="0" max="${parseFloat(it.qty) || 0}" step="any" class="form-control form-control-sm text-end rf-in" data-i="${i}" value="${st.qty[i] || ""}" placeholder="0"></div>
+            <label class="rf-restock"><input class="form-check-input rf-stock" type="checkbox" data-i="${i}" ${st.restock[i] ? "checked" : ""}><span>Put back on the shelf</span></label>
+        </div>`).join("");
+}
+
+function updateRefundTotal() {
+    const sale = refundSale();
+    const el = document.getElementById("rfTotal");
+    if (!sale || !el) return;
+    const total = round2(sale.items.reduce((n, it, i) => n + (window.refundState.qty[i] || 0) * (parseFloat(it.price) || 0), 0));
+    el.textContent = insightMoney(total);
+    document.getElementById("rfSaveBtn").disabled = total <= 0;
+}
+
+window.refundEverything = () => {
+    const sale = refundSale();
+    if (!sale) return;
+    window.refundState.qty = sale.items.map(it => parseFloat(it.qty) || 0);
+    renderRefundLines();
+    updateRefundTotal();
+};
+
+(function bindRefundInputs() {
+    const body = document.getElementById("rfLines");
+    if (!body) return;
+    body.addEventListener("input", (e) => {
+        const t = e.target;
+        if (!t || !t.classList || !t.classList.contains("rf-in")) return;
+        const sale = refundSale();
+        if (!sale) return;
+        const i = Number(t.dataset.i);
+        const max = parseFloat(sale.items[i].qty) || 0;
+        let v = parseFloat(t.value);
+        if (isNaN(v) || v < 0) v = 0;
+        if (v > max) { v = max; t.value = max; }
+        window.refundState.qty[i] = v;
+        updateRefundTotal();
+    });
+    body.addEventListener("change", (e) => {
+        const t = e.target;
+        if (t && t.classList && t.classList.contains("rf-stock")) window.refundState.restock[Number(t.dataset.i)] = !!t.checked;
+    });
+})();
+
+window.saveRefund = async () => {
+    if (!can("pos.refund")) return denyAccess("give refunds");
+    const st = window.refundState;
+    const sale = refundSale();
+    if (!st || !sale) return Swal.fire("Sale not found", "Close this window and open the sale again.", "error");
+
+    const lines = [];
+    sale.items.forEach((it, i) => {
+        const q = Math.min(parseFloat(st.qty[i]) || 0, parseFloat(it.qty) || 0);
+        if (q > 1e-9) lines.push({ i, it, q, restock: !!st.restock[i] });
+    });
+    if (!lines.length) return Swal.fire("Nothing chosen", "Enter how many of each item are being taken back.", "warning");
+    const reason = readReason("rfReason", "rfReasonOther");
+    if (!reason) return Swal.fire("Reason needed", "Choose or type why the items are being refunded. It is recorded with your name.", "warning");
+
+    const amount = round2(lines.reduce((n, l) => n + l.q * (parseFloat(l.it.price) || 0), 0));
+    const onTab = sale.payment === "Credit";
+    const method = onTab ? "Credit" : document.getElementById("rfMethod").value;
+    const ok = await Swal.fire({
+        title: "Give this refund?",
+        html: `<b>${insightMoney(amount)}</b> ${onTab ? "comes off the customer's tab" : `is paid back by ${escHtml(method)}`}.<br>${lines.map(l => `${window.toMixedFraction(l.q)} × ${escHtml(itemLabel(l.it))}${l.restock ? "" : " (not put back on the shelf)"}`).join("<br>")}`,
+        icon: "question", showCancelButton: true, confirmButtonText: "Yes, refund"
+    });
+    if (!ok.isConfirmed) return;
+
+    const btn = document.getElementById("rfSaveBtn");
+    btn.disabled = true;
+    try {
+        const batch = window.db.batch();
+        const saleRef = window.db.collection("sales").doc(sale.id);
+        const byIndex = {};
+        lines.forEach(l => { byIndex[l.i] = l; });
+
+        const newItems = [];
+        sale.items.forEach((it, i) => {
+            const l = byIndex[i];
+            if (!l) { newItems.push(it); return; }
+            const oldQty = parseFloat(it.qty) || 0;
+            const left = Math.round((oldQty - l.q) * 1e6) / 1e6;
+            if (left <= 1e-9) return;
+            const kept = Object.assign({}, it, { qty: left });
+            if (it.stockQty !== undefined) kept.stockQty = Math.round(itemStockQty(it) * left / oldQty * 1e6) / 1e6;
+            newItems.push(kept);
+        });
+        const newTotal = round2(newItems.reduce((n, it) => n + (parseFloat(it.price) || 0) * (parseFloat(it.qty) || 0), 0));
+        const now = new Date();
+        const by = getCurrentUserEmail() || "unknown";
+
+        batch.update(saleRef, {
+            items: newItems,
+            total: newTotal,
+            originalItems: sale.originalItems || sale.items,
+            originalTotal: sale.originalTotal !== undefined ? sale.originalTotal : sale.total,
+            refundedAmount: firebase.firestore.FieldValue.increment(amount),
+            lastRefund: { amount, reason, by, at: now, method }
+        });
+
+        const restocked = [];
+        lines.forEach(l => {
+            if (!l.restock) return;
+            const stockBack = Math.round(itemStockQty(l.it) * l.q / (parseFloat(l.it.qty) || 1) * 1e6) / 1e6;
+            let doc = l.it.id ? (window.productsCache || []).find(p => p.id === l.it.id) : null;
+            if (!doc) doc = (window.productsCache || []).find(p => p.data().name.trim().toLowerCase() === (l.it.name || "").trim().toLowerCase());
+            if (!doc || stockBack <= 0) return;
+            batch.update(window.db.collection("products").doc(doc.id), { stock: firebase.firestore.FieldValue.increment(stockBack) });
+            restocked.push(`${itemLabel(l.it)} +${window.toMixedFraction(stockBack)}`);
+        });
+
+        reverseCreditForSale(batch, sale, amount);
+
+        batch.set(window.db.collection("refunds").doc(), {
+            saleId: sale.id,
+            customer: sale.customer || "Guest",
+            customerId: sale.customerId || null,
+            items: lines.map(l => Object.assign({ id: l.it.id || null, name: l.it.name, qty: l.q, price: parseFloat(l.it.price) || 0, restocked: l.restock }, l.it.unit ? { unit: l.it.unit } : {})),
+            amount, reason, method,
+            originalPayment: sale.payment || "Cash",
+            by, date: now,
+            dateKey: now.toLocaleDateString("en-CA"),
+            saleDateKey: sale.date.toDate().toLocaleDateString("en-CA")
+        });
+
+        await writeWithGrace(batch.commit());
+
+        logAudit("refund", "refund", `Refund ${insightMoney(amount)}: ${sale.customer || "Guest"}`,
+            `${lines.map(l => `${window.toMixedFraction(l.q)} × ${itemLabel(l.it)}`).join(", ")}\nReason: ${reason}\n${onTab ? "Taken off the customer's tab" : "Paid back by " + method}. ${restocked.length ? "Stock put back: " + restocked.join(", ") : "Nothing put back on the shelf."}`,
+            { amount, ref: sale.id, alert: true });
+
+        hideModalById("refundModal");
+        window.refundState = null;
+        Swal.fire({ icon: "success", title: "Refund recorded", text: `${insightMoney(amount)} refunded${restocked.length ? " and the stock is back on the shelf" : ""}.`, timer: 2400, showConfirmButton: false });
+    } catch (err) {
+        console.error("Refund error:", err);
+        Swal.fire("Could not refund", err.message, "error");
+    } finally {
+        btn.disabled = false;
+    }
+};
+
+/* ---------------------------------------------------------------- audit trail */
+const AUDIT_CATS = {
+    price: { label: "Prices & discounts", icon: "fa-tags" },
+    refund: { label: "Refunds", icon: "fa-rotate-left" },
+    delete: { label: "Deletions", icon: "fa-trash-can" },
+    stock: { label: "Products & stock", icon: "fa-boxes-stacked" },
+    money: { label: "Money & suppliers", icon: "fa-coins" },
+    people: { label: "Staff & access", icon: "fa-user-shield" }
+};
+window.auditList = [];
+window.auditFilter = "all";
+window.auditQuery = "";
+window.auditLimit = 40;
+window.auditStarted = false;
+window.auditError = "";
+
+window.startAuditListener = () => {
+    if (window.auditStarted || !can("audit.view")) return;
+    window.auditStarted = true;
+    window.db.collection("audit").orderBy("at", "desc").limit(500).onSnapshot(snap => {
+        window.auditError = "";
+        window.auditList = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        window.renderAudit();
+    }, err => {
+        window.auditStarted = false;
+        window.auditError = err && err.message ? err.message : "unknown error";
+        window.renderAudit();
+    });
+};
+
+window.setAuditFilter = (c) => { window.auditFilter = c; window.auditLimit = 40; window.renderAudit(); };
+window.showMoreAudit = () => { window.auditLimit += 40; window.renderAudit(); };
+
+window.renderAudit = () => {
+    const box = document.getElementById("auditList");
+    if (!box) return;
+    if (!can("audit.view")) { box.innerHTML = ""; return; }
+    if (window.auditError) {
+        box.innerHTML = `<div class="empty-state"><i class="fas fa-lock"></i>The audit trail could not be loaded. Allow the 'audit' collection in your Firestore rules. (${escHtml(window.auditError)})</div>`;
+        return;
+    }
+    const all = window.auditList || [];
+
+    // Last 7 days at a glance
+    const weekAgo = Date.now() - 7 * 86400000;
+    let given = 0, refunded = 0, deletes = 0, flagged = 0;
+    all.forEach(a => {
+        const t = toDate(a.at);
+        if (!t || t.getTime() < weekAgo) return;
+        const amt = parseFloat(a.amount) || 0;
+        if (a.category === "price" && (a.action === "discount" || a.action === "price_change")) given += amt;
+        if (a.action === "refund") refunded += amt;
+        if (a.category === "delete") deletes++;
+        if (a.flag) flagged++;
+    });
+    const setText = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+    setText("auditGiven", insightMoney(given));
+    setText("auditRefunded", insightMoney(refunded));
+    setText("auditDeletes", String(deletes));
+    setText("auditFlagged", String(flagged));
+
+    const counts = {};
+    all.forEach(a => { counts[a.category] = (counts[a.category] || 0) + 1; });
+    const chips = document.getElementById("auditChips");
+    if (chips) {
+        chips.innerHTML = `<button class="btn btn-soft btn-sm ${window.auditFilter === "all" ? "active" : ""}" onclick="window.setAuditFilter('all')">All <span class="au-count">${all.length}</span></button>` +
+            Object.keys(AUDIT_CATS).map(k => `<button class="btn btn-soft btn-sm ${window.auditFilter === k ? "active" : ""}" onclick="window.setAuditFilter('${k}')"><i class="fas ${AUDIT_CATS[k].icon} me-1"></i>${AUDIT_CATS[k].label} <span class="au-count">${counts[k] || 0}</span></button>`).join("");
+    }
+
+    const q = (window.auditQuery || "").trim().toLowerCase();
+    const rows = all.filter(a => (window.auditFilter === "all" || a.category === window.auditFilter) &&
+        (!q || [a.title, a.detail, a.by].some(v => String(v || "").toLowerCase().includes(q))));
+
+    if (!rows.length) {
+        box.innerHTML = `<div class="empty-state"><i class="fas fa-clipboard-list"></i>${all.length ? "Nothing matches your search." : "Nothing recorded yet. Discounts, price changes, refunds and deletions will appear here."}</div>`;
+        return;
+    }
+
+    const visible = rows.slice(0, window.auditLimit);
+    let html = "", lastDay = null;
+    visible.forEach(a => {
+        const t = toDate(a.at) || new Date();
+        const dayKey = t.toDateString();
+        if (dayKey !== lastDay) {
+            html += `<div class="au-day">${t.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</div>`;
+            lastDay = dayKey;
+        }
+        const cat = AUDIT_CATS[a.category] || { label: "Other", icon: "fa-circle-info" };
+        html += `
+            <div class="au-row ${a.flag ? "flag" : ""}">
+                <span class="au-ico au-${escHtml(a.category || "other")}"><i class="fas ${cat.icon}"></i></span>
+                <div class="au-main">
+                    <div class="au-title">${escHtml(a.title)}${a.flag ? ' <span class="au-flag" title="Worth a look"><i class="fas fa-flag"></i></span>' : ""}</div>
+                    ${a.detail ? `<div class="au-detail">${escHtml(a.detail).replace(/\n/g, "<br>")}</div>` : ""}
+                </div>
+                <div class="au-meta"><b>${escHtml(a.by || "unknown")}</b><span>${escHtml(a.role || "")}</span><small>${t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</small>${can("audit.delete") ? `<button type="button" class="au-del" title="Delete this entry" onclick="window.deleteAuditEntry('${escHtml(a.id)}')"><i class="fas fa-trash-can"></i></button>` : ""}</div>
+            </div>`;
+    });
+    if (rows.length > visible.length) html += `<div class="text-center mt-3"><button class="btn btn-soft btn-sm" onclick="window.showMoreAudit()">Show more (${rows.length - visible.length} left)</button></div>`;
+    box.innerHTML = html;
+};
+
+window.deleteAuditEntry = async (id) => {
+    if (!can("audit.delete")) return denyAccess("delete audit entries");
+    const a = (window.auditList || []).find(x => x.id === id);
+    if (!a) return;
+    const res = await Swal.fire({
+        title: "Delete this entry?",
+        text: "It is removed from the audit trail. A note that you deleted it is kept.",
+        icon: "warning", showCancelButton: true, confirmButtonColor: "#d33", confirmButtonText: "Yes, delete"
+    });
+    if (!res.isConfirmed) return;
+    try {
+        await window.db.collection("audit").doc(id).delete();
+        const when = toDate(a.at);
+        logAudit("delete", "audit_delete", `Audit entry deleted: ${a.title}`, `It was recorded for ${a.by || "unknown"}${when ? " on " + when.toLocaleString() : ""}`, { flag: true });
+    } catch (err) {
+        Swal.fire("Could not delete", err.message, "error");
+    }
+};
+
+/** Clears old entries (or all of them) in one go */
+window.openAuditCleanup = async () => {
+    if (!can("audit.delete")) return denyAccess("delete audit entries");
+    const pick = await Swal.fire({
+        title: "Delete audit entries",
+        text: "Which entries should be deleted?",
+        input: "select",
+        inputOptions: { "30": "Older than 30 days", "90": "Older than 90 days", "365": "Older than 1 year", "all": "Everything" },
+        inputPlaceholder: "Choose...",
+        showCancelButton: true,
+        confirmButtonText: "Continue",
+        preConfirm: (v) => { if (!v) { Swal.showValidationMessage("Choose which entries to delete."); return false; } return v; }
+    });
+    if (!pick.isConfirmed || !pick.value || pick.value === true) return;
+    const choice = String(pick.value);
+    try {
+        const coll = window.db.collection("audit");
+        const snap = choice === "all" ? await coll.get() : await coll.where("at", "<", new Date(Date.now() - Number(choice) * 86400000)).get();
+        const docs = snap.docs || [];
+        if (!docs.length) return Swal.fire("Nothing to delete", "No entries match that choice.", "info");
+        const label = choice === "all" ? "every entry" : `entries older than ${choice === "365" ? "1 year" : choice + " days"}`;
+        const ok = await Swal.fire({
+            title: `Delete ${docs.length} entr${docs.length === 1 ? "y" : "ies"}?`,
+            text: `This removes ${label} from the audit trail. A note that you did this is kept. It cannot be undone.`,
+            icon: "warning", showCancelButton: true, confirmButtonColor: "#d33", confirmButtonText: "Yes, delete"
+        });
+        if (!ok.isConfirmed) return;
+        for (let i = 0; i < docs.length; i += 400) {
+            const batch = window.db.batch();
+            docs.slice(i, i + 400).forEach(d => batch.delete(d.ref || coll.doc(d.id)));
+            await batch.commit();
+        }
+        logAudit("delete", "audit_clear", `Audit trail cleared: ${docs.length} entr${docs.length === 1 ? "y" : "ies"} deleted`, `Deleted ${label}`, { flag: true, alert: true });
+        Swal.fire({ icon: "success", title: "Deleted", text: `${docs.length} entr${docs.length === 1 ? "y" : "ies"} removed.`, timer: 2000, showConfirmButton: false });
+    } catch (err) {
+        Swal.fire("Could not delete", err.message + " (Your Firestore rules must allow deleting from the 'audit' collection.)", "error");
+    }
+};
+
+(function bindAuditSearch() {
+    const s = document.getElementById("auditSearch");
+    if (s) s.addEventListener("input", () => { window.auditQuery = s.value; window.auditLimit = 40; window.renderAudit(); });
+})();
+
+/** Phone alert for the things an owner wants to hear about straight away */
+window.notifyAudit = (title, detail, by) => {
+    window.sendAlert(
+        `🔎 *${title}*\n${detail ? detail + "\n" : ""}By: ${by || "unknown"}\n${new Date().toLocaleString()}`,
+        "onAudit"
+    );
+};
+
+/* ==========================================================================
+   SECTION 12I: WORK LOCATION (where staff may clock in from), set by the admin
+   ========================================================================== */
+
+const WP_RADIUS_CHOICES = [50, 100, 200, 300, 500, 1000, 5000, 10000];
+const round6 = (n) => Math.round(n * 1e6) / 1e6;
+
+/**
+ * Pulls a latitude and longitude out of whatever the admin pastes from Google Maps:
+ *  - the numbers Google shows when you right-click or press and hold a spot ("-1.533134, 37.131476")
+ *  - a long map link (.../@-1.53,37.13,17z   or   ...!3d-1.53!4d37.13   or   ...?q=-1.53,37.13)
+ *  - degrees/minutes/seconds ("1°31'59.3"S 37°07'53.3"E")
+ * Returns { lat, lon } or null. Short links (maps.app.goo.gl) cannot be opened from here.
+ */
+function parseMapsLocation(raw) {
+    let s = String(raw || "").trim();
+    if (!s) return null;
+    try { s = decodeURIComponent(s.replace(/\+/g, " ")); } catch (e) { /* keep as typed */ }
+    const num = "(-?\\d+(?:\\.\\d+)?)";
+    const valid = (lat, lon) => (isFinite(lat) && isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) ? { lat: round6(lat), lon: round6(lon) } : null;
+    let m;
+
+    // The dropped pin itself (more exact than the centre of the screen)
+    if ((m = s.match(new RegExp("!3d" + num + "!4d" + num)))) return valid(+m[1], +m[2]);
+    // ?q=lat,lon   ll=lat,lon   query=...   destination=...
+    if ((m = s.match(new RegExp("[?&](?:q|ll|query|center|destination|daddr)=\\s*" + num + "\\s*,\\s*" + num)))) return valid(+m[1], +m[2]);
+    // .../@lat,lon,17z
+    if ((m = s.match(new RegExp("@" + num + ",\\s*" + num)))) return valid(+m[1], +m[2]);
+
+    // Degrees, minutes, seconds
+    const part = "(\\d+(?:\\.\\d+)?)\\s*°\\s*(?:(\\d+(?:\\.\\d+)?)\\s*['′]\\s*)?(?:(\\d+(?:\\.\\d+)?)\\s*[\"″]\\s*)?";
+    if ((m = s.match(new RegExp(part + "([NSns])[\\s,]*" + part + "([EWew])")))) {
+        const toDec = (d, mi, se, hemi) => {
+            const v = (+d) + (+(mi || 0)) / 60 + (+(se || 0)) / 3600;
+            return /[SsWw]/.test(hemi) ? -v : v;
+        };
+        return valid(toDec(m[1], m[2], m[3], m[4]), toDec(m[5], m[6], m[7], m[8]));
+    }
+
+    // Plain "lat, lon"
+    if ((m = s.match(new RegExp("^\\(?\\s*" + num + "\\s*[,;\\s]\\s*" + num + "\\s*\\)?$")))) return valid(+m[1], +m[2]);
+    // Two long decimals somewhere in the text
+    if ((m = s.match(/(-?\d{1,2}\.\d{3,})\s*,\s*(-?\d{1,3}\.\d{3,})/))) return valid(+m[1], +m[2]);
+    return null;
+}
+
+const mapsLink = (lat, lon) => `https://www.google.com/maps?q=${lat},${lon}`;
+
+window.wpDraft = null;
+window.wpFound = null;      // the pin found in the paste box: { lat, lon }
+
+function radiusLabel(m) { return formatDistance(m); }
+
+function radiusSelectHTML(value, attrs) {
+    const opts = WP_RADIUS_CHOICES.slice();
+    if (!opts.includes(value)) opts.push(value);
+    opts.sort((a, b) => a - b);
+    return `<select class="form-select form-select-sm" ${attrs}>${opts.map(o => `<option value="${o}" ${o === value ? "selected" : ""}>${radiusLabel(o)}</option>`).join("")}</select>`;
+}
+
+window.openWorkplaceModal = () => {
+    if (!can("attendance.location")) return denyAccess("change the work location");
+    const cfg = window.workplaceConfig || DEFAULT_WORKPLACE();
+    window.wpDraft = JSON.parse(JSON.stringify(cfg));
+    window.wpFound = null;
+    ["wpName", "wpPaste"].forEach(id => { const e = document.getElementById(id); if (e) e.value = ""; });
+    document.getElementById("wpRadius").innerHTML = WP_RADIUS_CHOICES.map(o => `<option value="${o}" ${o === 100 ? "selected" : ""}>${radiusLabel(o)}</option>`).join("");
+    document.getElementById("wpParsed").innerHTML = "";
+    document.getElementById("wpTest").innerHTML = "";
+    renderWorkplaceModal();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById("workplaceModal")).show();
+};
+
+function renderWorkplaceModal() {
+    const d = window.wpDraft;
+    if (!d) return;
+    document.getElementById("wpEnabled").checked = d.enabled;
+    document.getElementById("wpBody").classList.toggle("wp-off", !d.enabled);
+    const list = document.getElementById("wpList");
+    list.innerHTML = d.locations.length ? d.locations.map((l, i) => `
+        <div class="wp-row ${l.active === false ? "wp-inactive" : ""}">
+            <div class="wp-main">
+                <label class="wp-use"><input class="form-check-input" type="checkbox" ${l.active === false ? "" : "checked"} onchange="window.wpSetActive(${i}, this.checked)"> <b>${escHtml(l.name)}</b></label>
+                <small>${l.lat}, ${l.lon} · <a href="${mapsLink(l.lat, l.lon)}" target="_blank" rel="noopener">Open in Google Maps</a></small>
+                ${l.radius > 500 ? `<small class="wp-warn"><i class="fas fa-triangle-exclamation me-1"></i>Staff up to ${radiusLabel(l.radius)} away can clock in. Pick a smaller distance to keep them on site.</small>` : ""}
+            </div>
+            <div class="wp-radius"><label>Allowed distance</label>${radiusSelectHTML(l.radius, `data-i="${i}"`)}</div>
+            <button type="button" class="btn btn-soft btn-sm btn-icon" title="Remove" onclick="window.wpRemove(${i})"><i class="fas fa-trash-can text-danger"></i></button>
+        </div>`).join("")
+        : `<div class="empty-state"><i class="fas fa-location-dot"></i>No location yet. Add one below.</div>`;
+}
+
+window.wpToggle = (on) => { if (window.wpDraft) { window.wpDraft.enabled = !!on; renderWorkplaceModal(); } };
+window.wpSetActive = (i, on) => { if (window.wpDraft && window.wpDraft.locations[i]) { window.wpDraft.locations[i].active = !!on; renderWorkplaceModal(); } };
+window.wpRemove = (i) => { if (window.wpDraft) { window.wpDraft.locations.splice(i, 1); renderWorkplaceModal(); } };
+
+(function bindWorkplaceInputs() {
+    const list = document.getElementById("wpList");
+    if (list) list.addEventListener("change", (e) => {
+        const t = e.target;
+        if (t && t.tagName === "SELECT" && t.dataset && t.dataset.i !== undefined && window.wpDraft) {
+            window.wpDraft.locations[Number(t.dataset.i)].radius = Number(t.value);
+            renderWorkplaceModal();
+        }
+    });
+    const paste = document.getElementById("wpPaste");
+    if (paste) paste.addEventListener("input", () => window.wpParsePaste());
+})();
+
+/** Reads the paste box and tells the admin what was found */
+window.wpParsePaste = () => {
+    const raw = document.getElementById("wpPaste").value;
+    const out = document.getElementById("wpParsed");
+    window.wpFound = parseMapsLocation(raw);
+    if (!raw.trim()) { out.innerHTML = ""; return; }
+    if (window.wpFound) {
+        const { lat, lon } = window.wpFound;
+        out.innerHTML = `<span class="text-success"><i class="fas fa-circle-check me-1"></i>Found ${lat}, ${lon}</span> · <a href="${mapsLink(lat, lon)}" target="_blank" rel="noopener">Check it on the map</a>`;
+    } else if (/goo\.gl|maps\.app/i.test(raw)) {
+        out.innerHTML = `<span class="text-warning"><i class="fas fa-triangle-exclamation me-1"></i>That is a short link and this page cannot open it. Open it in Google Maps, then copy the numbers shown for the pin, or the full link from the address bar.</span>`;
+    } else {
+        out.innerHTML = `<span class="text-danger"><i class="fas fa-circle-xmark me-1"></i>No location found in that. Paste a Google Maps link, or numbers like -1.533134, 37.131476.</span>`;
+    }
+};
+
+/** Stand at the workplace and use the phone's own GPS */
+window.wpUseMyLocation = async () => {
+    const out = document.getElementById("wpParsed");
+    out.innerHTML = `<span class="text-muted"><i class="fas fa-spinner fa-spin me-1"></i>Getting your location...</span>`;
+    const pos = await getPositionOnce();
+    if (!pos.success) {
+        out.innerHTML = `<span class="text-danger"><i class="fas fa-circle-xmark me-1"></i>Could not get your location. Allow location access for this site and try again.</span>`;
+        return;
+    }
+    const lat = round6(pos.coords.latitude), lon = round6(pos.coords.longitude);
+    document.getElementById("wpPaste").value = `${lat}, ${lon}`;
+    window.wpFound = { lat, lon };
+    const acc = Math.round(pos.coords.accuracy || 0);
+    out.innerHTML = `<span class="text-success"><i class="fas fa-circle-check me-1"></i>Found ${lat}, ${lon}</span> · accurate to about ${acc} m${acc > 100 ? ` <span class="text-warning">(weak signal: go outside and try again for a better pin)</span>` : ""}`;
+};
+
+window.wpAdd = () => {
+    if (!window.wpDraft) return;
+    window.wpParsePaste();
+    if (!window.wpFound) return Swal.fire("Location needed", "Paste the pin from Google Maps, or press 'Use my current location' while standing at the workplace.", "warning");
+    const radius = Number(document.getElementById("wpRadius").value) || 100;
+    const name = document.getElementById("wpName").value.trim() || `Workplace ${window.wpDraft.locations.length + 1}`;
+    window.wpDraft.locations.push({ name, lat: window.wpFound.lat, lon: window.wpFound.lon, radius, active: true });
+    document.getElementById("wpName").value = "";
+    document.getElementById("wpPaste").value = "";
+    document.getElementById("wpParsed").innerHTML = `<span class="text-success"><i class="fas fa-circle-check me-1"></i>Added. Press Save to apply it.</span>`;
+    window.wpFound = null;
+    renderWorkplaceModal();
+};
+
+/** How far am I from each saved location right now? */
+window.wpTestDistance = async () => {
+    const out = document.getElementById("wpTest");
+    if (!window.wpDraft || !window.wpDraft.locations.length) { out.innerHTML = `<span class="text-muted">Add a location first.</span>`; return; }
+    out.innerHTML = `<span class="text-muted"><i class="fas fa-spinner fa-spin me-1"></i>Checking where you are...</span>`;
+    const pos = await getPositionOnce();
+    if (!pos.success) { out.innerHTML = `<span class="text-danger">Could not get your location. Allow location access and try again.</span>`; return; }
+    out.innerHTML = window.wpDraft.locations.filter(l => l.active !== false).map(l => {
+        const d = distanceMeters(pos.coords.latitude, pos.coords.longitude, l.lat, l.lon);
+        const inside = d - Math.min(pos.coords.accuracy || 0, 50) <= l.radius;
+        return `<div><i class="fas ${inside ? "fa-circle-check text-success" : "fa-circle-xmark text-danger"} me-1"></i>You are ${formatDistance(d)} from <b>${escHtml(l.name)}</b>: ${inside ? "you could clock in here" : "too far to clock in"} (allowed ${formatDistance(l.radius)}).</div>`;
+    }).join("");
+};
+
+window.saveWorkplace = async () => {
+    if (!can("attendance.location")) return denyAccess("change the work location");
+    const d = window.wpDraft;
+    if (!d) return;
+    if (d.enabled && !d.locations.some(l => l.active !== false)) return Swal.fire("Tick a location", "Tick at least one place staff can clock in from, or switch the location check off.", "warning");
+    const before = window.workplaceConfig || DEFAULT_WORKPLACE();
+    try {
+        await writeWithGrace(window.db.collection("settings").doc("workplace").set({
+            enabled: d.enabled,
+            locations: d.locations.map(l => ({ name: l.name, lat: l.lat, lon: l.lon, radius: l.radius, active: l.active !== false })),
+            updatedAt: new Date(),
+            updatedBy: getCurrentUserEmail() || "admin"
+        }));
+        window.workplaceConfig = normalizeWorkplace(d);
+        const describe = (c) => c.enabled ? (c.locations.filter(l => l.active !== false).map(l => `${l.name} (${l.lat}, ${l.lon}, within ${formatDistance(l.radius)})`).join("; ") || "no location") : "location check OFF";
+        logAudit("people", "workplace", "Work location changed", `Before: ${describe(before)}\nNow: ${describe(window.workplaceConfig)}`, { flag: true, alert: true });
+        window.renderWorkplaceNote();
+        hideModalById("workplaceModal");
+        window.wpDraft = null;
+        Swal.fire({ icon: "success", title: "Work location saved", text: "It applies the next time anyone clocks in.", timer: 2400, showConfirmButton: false });
+    } catch (err) {
+        Swal.fire("Could not save", err.message + " (If this says permission denied, allow write access to the 'settings' collection in your Firestore rules.)", "error");
+    }
+};
+
+/** The line under the Clock In & Out heading, so staff know the rule */
+window.renderWorkplaceNote = () => {
+    const note = document.getElementById("attLocationNote");
+    if (!note) return;
+    const cfg = window.workplaceConfig;
+    if (!cfg) { note.textContent = ""; return; }
+    const used = cfg.locations.filter(l => l.active !== false);
+    note.textContent = !cfg.enabled || !used.length
+        ? "You can clock in from anywhere."
+        : "You can clock in within " + used.map(l => `${formatDistance(l.radius)} of ${l.name}`).join(" or ") + ".";
+};
+window.onWorkplaceChanged = () => window.renderWorkplaceNote();
+
+/* ==========================================================================
    SECTION 13: UI NAVIGATION & SCROLL HELPERS
    ========================================================================== */
 
@@ -6716,7 +8748,7 @@ window.alertConfig = {
     tgToken: "", tgChatId: "",
     phone: "", apiKey: "",
     useEmail: false, emailKey: "", emailImportantOnly: false,
-    onSale: true, onLowStock: true, onDayClose: true, onStockTake: true, onSmart: true
+    onSale: true, onLowStock: true, onDayClose: true, onStockTake: true, onSmart: true, onDelivery: true, onAudit: true
 };
 
 // Live copy of the admin's alert settings (read by every device so any till can send the alert)
@@ -6896,6 +8928,8 @@ window.openAlertsModal = () => {
     document.getElementById("alertsOnDayClose").checked = c.onDayClose !== false;
     document.getElementById("alertsOnStockTake").checked = c.onStockTake !== false;
     document.getElementById("alertsOnSmart").checked = c.onSmart !== false;
+    document.getElementById("alertsOnDelivery").checked = c.onDelivery !== false;
+    document.getElementById("alertsOnAudit").checked = c.onAudit !== false;
     document.getElementById("alertsStatus").textContent = "";
     window.toggleAlertChannel();
     bootstrap.Modal.getOrCreateInstance(document.getElementById("alertsModal")).show();
@@ -6917,7 +8951,9 @@ function readAlertForm() {
         onLowStock: document.getElementById("alertsOnLowStock").checked,
         onDayClose: document.getElementById("alertsOnDayClose").checked,
         onStockTake: document.getElementById("alertsOnStockTake").checked,
-        onSmart: document.getElementById("alertsOnSmart").checked
+        onSmart: document.getElementById("alertsOnSmart").checked,
+        onDelivery: document.getElementById("alertsOnDelivery").checked,
+        onAudit: document.getElementById("alertsOnAudit").checked
     };
 }
 
@@ -7025,6 +9061,40 @@ window.findTelegramChatId = async () => {
  * Items marked admin:true are only shown to admins.
  */
 const APP_RELEASES = [
+    {
+        id: "2026.10.85",
+        date: "25 Oct 2026",
+        title: "Choose where staff can clock in",
+        items: [
+            { icon: "fa-location-dot", text: "Clock in now follows a work location the admin sets. The Clock In & Out tab shows how close you need to be." },
+            { icon: "fa-location-crosshairs", admin: true, text: "New Work location button in Clock In & Out: paste the pin from Google Maps (a link or the coordinates), or stand at the workplace and use your phone's GPS. Add more than one place, and choose how close staff must be." },
+            { icon: "fa-user-shield", admin: true, text: "Two new permissions: set the work location, and clock in from anywhere (shown as 'off-site' in the records)." }
+        ]
+    },
+    {
+        id: "2026.10.80",
+        date: "25 Oct 2026",
+        title: "Discounts, refunds and the audit trail",
+        items: [
+            { icon: "fa-tag", text: "At the till, trusted staff can now change an item's price or give a discount on the whole sale. A reason is always asked for and recorded with their name." },
+            { icon: "fa-rotate-left", text: "Refunds: open a sale in the Sales tab and press Refund to take back some or all of the items. The stock can go back on the shelf and the refund is logged with the reason." },
+            { icon: "fa-clipboard-list", admin: true, text: "New Audit trail tab: who changed prices, gave discounts, refunded, deleted sales or changed stock, and when. Only people with the delete permission can remove entries, and a note is always kept." },
+            { icon: "fa-user-shield", admin: true, text: "New permissions control this: give discounts, change prices at the till, give refunds, see the audit trail, and delete audit entries. Managers can do the first three by default." },
+            { icon: "fa-bell", admin: true, text: "New phone alert option: get told straight away when a discount, price change, refund or deletion happens." }
+        ]
+    },
+    {
+        id: "2026.10.70",
+        date: "25 Oct 2026",
+        title: "Barcode scanning, debt reminders and suppliers",
+        items: [
+            { icon: "fa-barcode", text: "Scan a bottle with the phone camera in POS to add it to the cart. A barcode reader plugged into the computer works too: just scan into the product box." },
+            { icon: "fa-bell", text: "Customers who owe money can be reminded in one tap: a WhatsApp or SMS message opens with their name and balance already written." },
+
+            { icon: "fa-truck", admin: true, text: "New Suppliers tab: record what arrived, from whom, at what cost, and whether you paid. It adds the stock, updates product costs, warns when a price change leaves too little profit, and shows what you owe each supplier." },
+            { icon: "fa-barcode", admin: true, text: "Give each product a barcode in Add or Edit Product (type it or scan it). If you scan a bottle that has no barcode yet, you can link it to a product on the spot." }
+        ]
+    },
     {
         id: "2026.10.53",
         date: "25 Oct 2026",
@@ -7230,6 +9300,15 @@ document.addEventListener("DOMContentLoaded", function () {
     const insightsTabBtn = document.querySelector('[data-bs-target="#insightsTab"]');
     if (insightsTabBtn) {
         insightsTabBtn.addEventListener("shown.bs.tab", () => window.renderInsights());
+    }
+
+    const auditTabBtn = document.querySelector('[data-bs-target="#auditTab"]');
+    if (auditTabBtn) {
+        auditTabBtn.addEventListener("shown.bs.tab", () => { window.startAuditListener(); window.renderAudit(); });
+    }
+    const suppliersTabBtn = document.querySelector('[data-bs-target="#suppliersTab"]');
+    if (suppliersTabBtn) {
+        suppliersTabBtn.addEventListener("shown.bs.tab", () => window.renderSuppliers());
     }
 
     const salesTabBtn = document.querySelector('[data-bs-target="#salesTab"]');

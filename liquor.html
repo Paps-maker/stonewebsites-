@@ -356,6 +356,11 @@
   .swal2-popup { border-radius: 18px !important; font-family: var(--bs-body-font-family) !important; padding: 1.6rem !important; }
   .swal2-title { font-size: 1.25rem !important; font-weight: 700 !important; color: var(--ink) !important; }
   .swal2-html-container { color: var(--ink-2) !important; font-size: .95rem !important; }
+  .swal2-select, .swal2-input, .swal2-textarea { background: var(--surface-2) !important; color: var(--ink) !important; border: 1px solid var(--line) !important; border-radius: 10px !important; box-shadow: none !important; color-scheme: dark; }
+  html[data-theme="light"] .swal2-select, html[data-theme="light"] .swal2-input, html[data-theme="light"] .swal2-textarea { color-scheme: light; }
+  .swal2-select:focus, .swal2-input:focus, .swal2-textarea:focus { border-color: var(--brand) !important; box-shadow: 0 0 0 3px var(--brand-soft) !important; }
+  /* the open list of every dropdown follows the theme (it was light text on white) */
+  select option, select optgroup { background: var(--surface); color: var(--ink); }
   .swal2-styled { border-radius: 10px !important; font-weight: 600 !important; box-shadow: none !important; }
   .swal2-styled.swal2-confirm { background: var(--brand-dark) !important; }
   .swal2-styled.swal2-confirm:focus { box-shadow: 0 0 0 3px rgba(200, 137, 59, .35) !important; }
@@ -452,6 +457,144 @@
   .perm-mini { border: 1px solid var(--line); background: var(--surface); color: var(--muted); border-radius: 8px; font-size: .72rem; padding: 3px 10px; margin-left: 4px; font-weight: 600; }
   .perm-mini:hover { color: var(--brand); border-color: var(--brand); }
 
+
+  /* Suppliers, reminders and scanning */
+  .sup-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 14px; }
+  .sr-warn { background: rgba(245, 158, 11, .2) !important; color: #f59e0b !important; }
+  html[data-theme="light"] .sr-warn { background: #fef3c7 !important; color: #b45309 !important; }
+  .dv-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+  .dv-chip { display: inline-block; font-size: .68rem; font-weight: 650; border-radius: 999px; padding: 2px 9px; background: var(--surface-2); color: var(--muted); border: 1px solid var(--line); }
+  .dv-chip.up { background: var(--pill-bad-bg); color: var(--pill-bad-ink); border-color: transparent; }
+  .dv-chip.down { background: var(--pill-ok-bg); color: var(--pill-ok-ink); border-color: transparent; }
+  .dv-chip.bad { background: var(--pill-bad-bg); color: var(--pill-bad-ink); border-color: transparent; }
+  .dv-chip.warn { background: rgba(245, 158, 11, .2); color: #f59e0b; border-color: transparent; }
+  html[data-theme="light"] .dv-chip.warn { background: #fef3c7; color: #b45309; }
+  .dv-summary { display: grid; grid-template-columns: 1.1fr 1.4fr 1fr 1fr; gap: 12px; align-items: end; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
+  .dv-summary > div > span { display: block; font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  .dv-summary > div > b { font-size: 1.15rem; display: block; }
+  .dv-summary small { color: var(--muted); font-size: .72rem; }
+  .dv-owing b { color: var(--danger); }
+  @media (max-width: 767.98px) { .dv-summary { grid-template-columns: 1fr 1fr; } }
+  .price-chip { background: rgba(245, 158, 11, .18); color: #f59e0b; border-color: transparent; font-weight: 600; }
+  html[data-theme="light"] .price-chip { color: #b45309; background: #fef3c7; }
+  .refund-chip { background: rgba(96, 165, 250, .18); color: #60a5fa; border-color: transparent; font-weight: 600; }
+  html[data-theme="light"] .refund-chip { color: #1d4ed8; background: #dbeafe; }
+  .sale-note { display: flex; gap: 10px; align-items: flex-start; font-size: .8rem; padding: 8px 10px; border-radius: 10px; margin-top: 8px; border: 1px solid var(--line); }
+  .sale-note i { margin-top: 3px; }
+  .sale-note.price-note { background: rgba(245, 158, 11, .1); color: var(--ink); }
+  .sale-note.price-note i { color: #f59e0b; }
+  .sale-note.refund-note { background: rgba(96, 165, 250, .1); color: var(--ink); }
+  .sale-note.refund-note i { color: #60a5fa; }
+  .cart-discount-info { font-size: .82rem; color: rgba(255, 255, 255, .75); margin-top: 8px; }
+  .cart-discount-reason { font-size: .74rem; color: rgba(255, 255, 255, .55); }
+  .cart-discount-reason a { color: var(--brand); margin-left: 6px; }
+  .cart-line-meta .price-chip { margin-left: 4px; }
+  .pc-product { font-weight: 700; font-size: 1.05rem; }
+  .dc-preview > div { display: flex; justify-content: space-between; }
+  #dcKindPercent.active, #dcKindAmount.active { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
+  .rf-lines { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .rf-line { display: grid; grid-template-columns: 1fr 110px; gap: 6px 12px; padding: 12px; border-bottom: 1px solid var(--line); align-items: end; }
+  .rf-line:last-child { border-bottom: 0; }
+  .rf-name small { display: block; color: var(--muted); font-size: .76rem; }
+  .rf-qty label { display: block; font-size: .7rem; color: var(--muted); margin-bottom: 2px; }
+  .rf-restock { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; font-size: .8rem; color: var(--muted); margin: 0; }
+  .alert-soft { background: rgba(245, 158, 11, .12); border: 1px solid rgba(245, 158, 11, .3); border-radius: 10px; padding: 10px 12px; font-size: .85rem; }
+  .au-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px; }
+  @media (max-width: 767.98px) { .au-kpis { grid-template-columns: 1fr 1fr; } }
+  .au-count { font-size: .68rem; opacity: .75; margin-left: 2px; }
+  .au-day { font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 14px 2px 6px; }
+  .au-row { display: grid; grid-template-columns: 38px 1fr auto; gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; margin-bottom: 8px; background: var(--surface-2); }
+  .au-row.flag { border-color: rgba(239, 68, 68, .45); }
+  .au-ico { width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; background: rgba(148, 163, 184, .18); color: var(--muted); }
+  .au-ico.au-price { background: rgba(245, 158, 11, .18); color: #f59e0b; }
+  .au-ico.au-refund { background: rgba(96, 165, 250, .18); color: #60a5fa; }
+  .au-ico.au-delete { background: rgba(239, 68, 68, .18); color: #ef4444; }
+  .au-ico.au-stock { background: rgba(34, 197, 94, .18); color: #22c55e; }
+  .au-ico.au-money { background: rgba(168, 85, 247, .18); color: #a855f7; }
+  .au-ico.au-people { background: rgba(20, 184, 166, .18); color: #14b8a6; }
+  .au-main { min-width: 0; }
+  .au-title { font-weight: 600; font-size: .9rem; overflow-wrap: anywhere; }
+  .au-flag { color: #ef4444; font-size: .75rem; margin-left: 4px; }
+  .au-detail { font-size: .8rem; color: var(--muted); margin-top: 3px; overflow-wrap: anywhere; }
+  .au-meta { text-align: right; font-size: .76rem; display: flex; flex-direction: column; gap: 1px; max-width: 180px; }
+  .au-meta b { overflow-wrap: anywhere; font-weight: 600; }
+  .au-meta span, .au-meta small { color: var(--muted); }
+  .au-del { align-self: flex-end; margin-top: 4px; background: transparent; border: 0; color: var(--muted); padding: 2px 4px; border-radius: 6px; }
+  .au-del:hover { color: #ef4444; background: rgba(239, 68, 68, .12); }
+  @media (max-width: 575.98px) {
+    .au-row { grid-template-columns: 34px 1fr; }
+    .au-ico { width: 34px; height: 34px; }
+    .au-meta { grid-column: 2; text-align: left; max-width: none; flex-direction: row; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+  }
+  @media (max-width: 575.98px) {
+    #priceModal .modal-footer > .me-auto, #discountModal .modal-footer > .me-auto { width: 100%; margin-right: 0 !important; }
+  }
+  .wp-list { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .wp-row { display: grid; grid-template-columns: 1fr 150px auto; gap: 10px 14px; align-items: center; padding: 12px; border-bottom: 1px solid var(--line); }
+  .wp-row:last-child { border-bottom: 0; }
+  .wp-use { display: flex; align-items: center; gap: 8px; margin: 0 0 2px; cursor: pointer; }
+  .wp-inactive .wp-main, .wp-inactive .wp-radius { opacity: .5; }
+  .wp-main small { display: block; color: var(--muted); font-size: .76rem; overflow-wrap: anywhere; }
+  .wp-main .wp-warn { color: #f59e0b; margin-top: 2px; }
+  .wp-radius label { display: block; font-size: .7rem; color: var(--muted); margin-bottom: 2px; }
+  .wp-add { border: 1px solid var(--line); border-radius: 12px; padding: 14px; background: var(--surface-2); }
+  .wp-help summary { cursor: pointer; font-size: .86rem; color: var(--brand); }
+  .wp-help ol { font-size: .82rem; color: var(--muted); padding-left: 1.2rem; margin: 8px 0 0; }
+  .wp-help li { margin-bottom: 6px; }
+  #wpBody.wp-off { opacity: .45; pointer-events: none; }
+  @media (max-width: 575.98px) {
+    .wp-row { grid-template-columns: 1fr auto; }
+    .wp-radius { grid-column: 1; }
+    .wp-row > .btn-icon { grid-row: 1; grid-column: 2; }
+  }
+  .pos-add-btn { width: 100%; }
+  @media (min-width: 992px) { .pos-add-btn { width: auto; min-width: 130px; } }
+  #productSearch { min-width: 0; }
+  .dv-row .dv-c-qty { width: 96px; }
+  .dv-row .dv-c-cost { width: 120px; }
+  .dv-row .dv-c-del { width: 44px; }
+  .dv-row input.dv-in { min-width: 76px; padding-left: 8px; padding-right: 8px; }
+  @media (max-width: 575.98px) {
+    #deliveryModal thead { display: none; }
+    #deliveryModal table.table-compact, #deliveryModal tbody { display: block; width: 100%; min-width: 0; }
+    #deliveryModal .table-compact td:first-child { max-width: none; min-width: 0; position: static; box-shadow: none; }
+    #deliveryModal .table-compact > :not(caption) > * > * { white-space: normal; }
+    #deliveryModal .dv-c-total { white-space: nowrap !important; }
+    #deliveryModal .dv-row { min-width: 0; }
+    #deliveryModal .dv-row input.dv-in { min-width: 0; width: 100%; }
+    #deliveryModal .dv-row > td[colspan], #deliveryModal tbody > tr:not(.dv-row) { display: block; }
+    #deliveryModal .dv-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px 10px; align-items: end; padding: 12px; border-bottom: 1px solid var(--line); }
+    #deliveryModal .dv-row > td { display: block; width: auto !important; padding: 0 !important; border: 0 !important; }
+    #deliveryModal .dv-c-name { grid-column: 1 / -1; }
+    #deliveryModal .dv-c-qty::before, #deliveryModal .dv-c-cost::before { content: attr(data-label); display: block; font-size: .7rem; color: var(--muted); margin-bottom: 2px; }
+    #deliveryModal .dv-c-total { grid-column: 1 / 3; text-align: left !important; }
+    #deliveryModal .dv-c-del { grid-column: 3; justify-self: end; }
+  }
+
+  .rm-summary { font-size: .88rem; color: var(--ink-2); }
+  .rm-row { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center; padding: 12px 2px; border-bottom: 1px dashed var(--line); }
+  .rm-row:last-child { border-bottom: 0; }
+  .rm-who b { display: block; }
+  .rm-who small { color: var(--muted); font-size: .74rem; }
+  .rm-amount { font-weight: 700; color: var(--danger); white-space: nowrap; }
+  .rm-buttons { display: flex; gap: 6px; }
+  .rm-wa { background: #25d366; color: #052e16; border: 0; font-weight: 600; }
+  .rm-wa:hover { background: #1ebe5b; color: #052e16; }
+  .rm-wa:disabled, .rm-buttons .btn:disabled { opacity: .4; }
+  @media (max-width: 575.98px) { .rm-row { grid-template-columns: 1fr auto; } .rm-buttons { grid-column: 1 / -1; } .rm-buttons .btn { flex: 1 1 auto; } }
+
+  .scan-view { position: relative; width: 100%; aspect-ratio: 4 / 3; max-height: 52vh; background: #000; border-radius: 14px; overflow: hidden; }
+  .scan-view video { width: 100%; height: 100%; object-fit: cover; }
+  .scan-frame { position: absolute; inset: 18% 10%; border: 2px solid var(--brand); border-radius: 14px; box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .35); }
+  .scan-line { position: absolute; left: 6%; right: 6%; height: 2px; background: var(--brand); box-shadow: 0 0 8px var(--brand); animation: scanmove 1.8s ease-in-out infinite alternate; }
+  @keyframes scanmove { from { top: 8%; } to { top: 90%; } }
+  .scan-status { margin-top: 10px; padding: 8px 12px; border-radius: 10px; font-size: .86rem; background: var(--surface-2); color: var(--ink-2); text-align: center; }
+  .scan-status.ok { background: var(--pill-ok-bg); color: var(--pill-ok-ink); }
+  .scan-status.bad { background: var(--pill-bad-bg); color: var(--pill-bad-ink); }
+  .scan-status.warn { background: rgba(245, 158, 11, .2); color: #f59e0b; }
+  .scan-unknown { margin-top: 10px; padding: 12px; border: 1px dashed var(--brand); border-radius: 12px; background: var(--surface-2); }
+  .scan-log { max-height: 130px; overflow-y: auto; margin-top: 8px; }
+  .scan-log-item { font-size: .84rem; padding: 4px 2px; border-bottom: 1px dashed var(--line); }
 
   /* Tots, busy times, smart warnings */
   .tot-tag { font-size: .62rem; text-transform: uppercase; letter-spacing: .05em; font-weight: 700; background: var(--brand-soft); color: var(--brand); border-radius: 999px; padding: 1px 7px; margin-left: 4px; vertical-align: middle; }
@@ -1003,6 +1146,8 @@
         <li class="nav-item d-none" data-perm="attendance.clock"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#attendanceTab"><i class="fas fa-user-clock"></i>Clock In &amp; Out</button></li>
         <li class="nav-item d-none" data-perm="view.restockLogs"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#inflowLogsTab"><i class="fas fa-truck-ramp-box"></i>Restock Logs</button></li>
         <li class="nav-item d-none" data-perm="requisition.use"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#requisitionTab"><i class="fas fa-clipboard-list"></i>Requisition</button></li>
+        <li class="nav-item d-none" data-perm="suppliers.view"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#suppliersTab"><i class="fas fa-truck"></i>Suppliers</button></li>
+        <li class="nav-item d-none" data-perm="audit.view"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#auditTab"><i class="fas fa-shield-halved"></i>Audit</button></li>
         <li class="nav-item d-none" data-perm="staff.manage"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#staffManagementTab"><i class="fas fa-users-gear"></i>Staff</button></li>
       </ul>
     </div>
@@ -1051,9 +1196,12 @@
             <h5 class="section-title">Customers</h5>
             <p class="section-sub">People you sell to and their contact details.</p>
           </div>
-          <button class="btn btn-custom d-none" data-perm="customers.add" onclick="window.openCustomerModal()">
-            <i class="fas fa-user-plus me-1"></i> Add Customer
-          </button>
+          <div class="action-row">
+            <button class="btn btn-soft d-none" data-perm="customers.remind" onclick="window.openReminders()"><i class="fas fa-bell me-1 text-warning"></i>Send reminders</button>
+            <button class="btn btn-custom ar-primary d-none" data-perm="customers.add" onclick="window.openCustomerModal()">
+              <i class="fas fa-user-plus me-1"></i> Add Customer
+            </button>
+          </div>
         </div>
         <div class="card panel">
           <div id="creditSummary" class="credit-summary"><i class="fas fa-circle-check me-2"></i>No customer owes money</div>
@@ -1082,7 +1230,7 @@
           <div class="col-lg-8">
             <div class="card panel mb-3">
               <div class="row g-3">
-                <div class="col-md-6 col-lg-4">
+                <div class="col-md-6 col-lg-3">
                   <label class="form-label">Customer</label>
                   <div class="d-flex gap-2">
                     <select id="posCustomer" class="form-select">
@@ -1093,12 +1241,15 @@
                     </button>
                   </div>
                 </div>
-                <div class="col-md-6 col-lg-3 position-relative">
+                <div class="col-md-6 col-lg-4 position-relative">
                   <label class="form-label">Product</label>
-                  <input type="text" id="productSearch" class="form-control" placeholder="Search product..." autocomplete="off">
+                  <div class="input-group flex-nowrap">
+                    <input type="text" id="productSearch" class="form-control" placeholder="Search or scan..." autocomplete="off">
+                    <button class="btn btn-soft" type="button" onclick="window.openPosScanner()" title="Scan a barcode with the camera"><i class="fas fa-barcode"></i></button>
+                  </div>
                   <div id="productResults" class="dropdown-menu w-100" style="display:none; position:absolute; z-index:1000;"></div>
                 </div>
-                <div class="col-6 col-md-4 col-lg-3">
+                <div class="col-6 col-md-4 col-lg-2">
                   <label class="form-label">Qty</label>
                   <div class="input-group flex-nowrap" id="posQtyGroup">
                     <input id="posQty" type="text" value="1" class="form-control px-2 text-center" placeholder="1 or 1/2">
@@ -1108,8 +1259,8 @@
                     </select>
                   </div>
                 </div>
-                <div class="col-6 col-md-8 col-lg-2 d-flex align-items-end">
-                  <button id="addToCartBtn" class="w-100 btn btn-custom"><i class="fas fa-cart-plus me-1"></i>Add</button>
+                <div class="col-6 col-md-8 col-lg-3 d-flex align-items-end">
+                  <button id="addToCartBtn" class="pos-add-btn btn btn-custom"><i class="fas fa-cart-plus me-1"></i>Add</button>
                 </div>
               </div>
             </div>
@@ -1126,8 +1277,10 @@
             <div class="card total-card">
               <div class="small-muted">Total Amount</div>
               <h2 id="cartTotalDisplay">KSh 0</h2>
+              <div id="cartDiscountInfo" class="cart-discount-info d-none"></div>
               <hr style="border-color: rgba(255,255,255,.15)">
               <button id="checkoutBtn" class="btn btn-custom w-100 mb-2 py-2"><i class="fas fa-lock me-2"></i>Checkout</button>
+              <button id="cartDiscountBtn" class="btn w-100 mb-2 d-none" data-perm="pos.discount" onclick="window.openDiscountModal()" style="background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.15)"><i class="fas fa-percent me-2"></i>Give discount</button>
               <button id="clearCartBtn" class="btn w-100" style="background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.15)">
                 <i class="fas fa-trash-can me-2"></i>Clear Cart
               </button>
@@ -1398,10 +1551,12 @@
           <div>
             <h5 class="section-title">Staff Clock In &amp; Out</h5>
             <p class="section-sub">Record your shift and review attendance history.</p>
+            <p class="section-sub mb-0"><i class="fas fa-location-dot me-1"></i><span id="attLocationNote"></span></p>
           </div>
           <div class="action-row ar-2">
             <button onclick="window.clockIn()" class="btn btn-success"><i class="fas fa-right-to-bracket me-1"></i>Clock In</button>
             <button onclick="window.clockOut()" class="btn btn-danger"><i class="fas fa-right-from-bracket me-1"></i>Clock Out</button>
+            <button class="btn btn-soft d-none" data-perm="attendance.location" onclick="window.openWorkplaceModal()"><i class="fas fa-location-crosshairs me-1"></i>Work location</button>
           </div>
         </div>
 
@@ -1501,6 +1656,87 @@
           <button class="btn btn-success mt-3" onclick="downloadRequisitionPDF()">
             <i class="fas fa-file-pdf me-1"></i>Download Requisition PDF
           </button>
+        </div>
+      </div>
+
+      <!-- ================= SUPPLIERS ================= -->
+      <div class="tab-pane fade" id="suppliersTab">
+        <div class="section-head">
+          <div>
+            <h5 class="section-title">Suppliers &amp; Deliveries</h5>
+            <p class="section-sub">Record what arrives, what it cost and what you still owe.</p>
+          </div>
+          <div class="action-row">
+            <button class="btn btn-soft d-none" data-perm="suppliers.manage" onclick="window.openSupplierModal()"><i class="fas fa-user-plus me-1"></i>Add supplier</button>
+            <button class="btn btn-custom ar-primary d-none" data-perm="deliveries.record" onclick="window.openDeliveryModal()"><i class="fas fa-truck-ramp-box me-1"></i>Receive delivery</button>
+          </div>
+        </div>
+
+        <div class="sup-kpis">
+          <div class="card stat-card"><span class="stat-icon ic-rose mb-2"><i class="fas fa-scale-unbalanced"></i></span><div class="stat-label">You owe suppliers</div><div id="supOwedTotal" class="stat-value">KSh 0.00</div><div id="supOwedCount" class="small text-muted">you owe nothing right now</div></div>
+          <div class="card stat-card"><span class="stat-icon ic-blue mb-2"><i class="fas fa-truck"></i></span><div class="stat-label">Suppliers</div><div id="supCount" class="stat-value">0</div></div>
+        </div>
+
+        <div class="nav sales-subtabs" id="supSubTabs" role="tablist">
+          <button class="subtab active" role="tab" data-bs-toggle="tab" data-bs-target="#supSubList"><i class="fas fa-truck"></i>Suppliers</button>
+          <button class="subtab" role="tab" data-bs-toggle="tab" data-bs-target="#supSubDeliveries"><i class="fas fa-truck-ramp-box"></i>Deliveries</button>
+          <button class="subtab" role="tab" data-bs-toggle="tab" data-bs-target="#supSubCosts"><i class="fas fa-arrow-trend-up"></i>Cost changes</button>
+        </div>
+
+        <div class="tab-content">
+          <div class="tab-pane fade show active" id="supSubList">
+            <div class="card panel">
+              <div class="table-wrap"><div class="table-responsive">
+                <table class="table table-hover align-middle table-compact">
+                  <thead><tr><th>Supplier</th><th>Phone</th><th class="text-end">You owe</th><th>Last delivery</th><th class="text-end">Actions</th></tr></thead>
+                  <tbody id="suppliersBody"></tbody>
+                </table>
+              </div></div>
+            </div>
+          </div>
+          <div class="tab-pane fade" id="supSubDeliveries"><div id="deliveriesList"></div></div>
+          <div class="tab-pane fade" id="supSubCosts">
+            <div class="card panel">
+              <p class="section-sub mb-3">Every time a supplier's price changed, with the profit margin it leaves at your current selling price.</p>
+              <div class="table-wrap"><div class="table-responsive">
+                <table class="table table-hover align-middle table-compact">
+                  <thead><tr><th>Date</th><th>Product</th><th>Supplier</th><th class="text-end">Old cost</th><th class="text-end">New cost</th><th class="text-end">Change</th><th class="text-end">Selling price</th><th class="text-end">Margin</th></tr></thead>
+                  <tbody id="costChangesBody"></tbody>
+                </table>
+              </div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= AUDIT TRAIL ================= -->
+      <div class="tab-pane fade" id="auditTab">
+        <div class="section-head">
+          <div>
+            <h5 class="section-title">Audit Trail</h5>
+            <p class="section-sub">Who gave discounts, changed prices, refunded, deleted or changed stock, and when.</p>
+          </div>
+          <div class="action-row">
+            <button class="btn btn-soft d-none" data-perm="audit.delete" onclick="window.openAuditCleanup()"><i class="fas fa-broom me-1"></i>Clean up</button>
+          </div>
+        </div>
+
+        <div class="au-kpis">
+          <div class="card stat-card"><span class="stat-icon ic-amber mb-2"><i class="fas fa-tags"></i></span><div class="stat-label">Given away at the till</div><div id="auditGiven" class="stat-value">KSh 0.00</div><div class="small text-muted">last 7 days</div></div>
+          <div class="card stat-card"><span class="stat-icon ic-blue mb-2"><i class="fas fa-rotate-left"></i></span><div class="stat-label">Refunded</div><div id="auditRefunded" class="stat-value">KSh 0.00</div><div class="small text-muted">last 7 days</div></div>
+          <div class="card stat-card"><span class="stat-icon ic-rose mb-2"><i class="fas fa-trash-can"></i></span><div class="stat-label">Records deleted</div><div id="auditDeletes" class="stat-value">0</div><div class="small text-muted">last 7 days</div></div>
+          <div class="card stat-card"><span class="stat-icon ic-rose mb-2"><i class="fas fa-flag"></i></span><div class="stat-label">Worth a look</div><div id="auditFlagged" class="stat-value">0</div><div class="small text-muted">last 7 days</div></div>
+        </div>
+
+        <div class="card panel">
+          <div class="d-flex gap-2 flex-wrap align-items-center mb-3">
+            <div class="search-box flex-grow-1" style="min-width:200px">
+              <i class="fas fa-search"></i>
+              <input id="auditSearch" class="form-control" placeholder="Search by person, product or customer...">
+            </div>
+          </div>
+          <div id="auditChips" class="range-chips mb-3"></div>
+          <div id="auditList"></div>
         </div>
       </div>
 
@@ -1621,6 +1857,14 @@
             <input id="prodCategory" list="categoryList" class="form-control" placeholder="e.g. Spirits, Beer, Soft drinks" autocomplete="off">
           </div>
           <div class="col-12">
+            <label class="form-label" for="prodBarcode">Barcode <span class="text-muted fw-normal">(optional)</span></label>
+            <div class="input-group">
+              <input id="prodBarcode" class="form-control" inputmode="numeric" placeholder="Scan it or type the number on the bottle" autocomplete="off">
+              <button class="btn btn-soft" type="button" onclick="window.scanInto('prodBarcode')" title="Scan with the camera"><i class="fas fa-barcode"></i></button>
+            </div>
+            <div id="prodBarcodeNote" class="form-text"></div>
+          </div>
+          <div class="col-12">
             <div class="tot-box">
               <div class="fw-semibold small mb-2"><i class="fas fa-martini-glass me-1 text-muted"></i>Sell by the tot <span class="text-muted fw-normal">(optional)</span></div>
               <div class="row g-2">
@@ -1678,6 +1922,13 @@
           <div class="col-12">
             <label class="form-label" for="editProdCategory">Category <span class="text-muted fw-normal">(optional)</span></label>
             <input id="editProdCategory" list="categoryList" class="form-control" placeholder="e.g. Spirits, Beer, Soft drinks" autocomplete="off">
+          </div>
+          <div class="col-12">
+            <label class="form-label" for="editProdBarcode">Barcode <span class="text-muted fw-normal">(optional)</span></label>
+            <div class="input-group">
+              <input id="editProdBarcode" class="form-control" inputmode="numeric" placeholder="Scan it or type the number on the bottle" autocomplete="off">
+              <button class="btn btn-soft" type="button" onclick="window.scanInto('editProdBarcode')" title="Scan with the camera"><i class="fas fa-barcode"></i></button>
+            </div>
           </div>
           <div class="col-12">
             <div class="tot-box">
@@ -1948,6 +2199,8 @@
           <label class="al-opt"><input class="form-check-input" type="checkbox" id="alertsOnLowStock"><span><b>Stock runs low</b><small>When an item drops to its minimum level</small></span></label>
           <label class="al-opt"><input class="form-check-input" type="checkbox" id="alertsOnDayClose"><span><b>A day is closed</b><small>Cash counted, and whether it was balanced, short or over</small></span></label>
           <label class="al-opt"><input class="form-check-input" type="checkbox" id="alertsOnStockTake"><span><b>A stock count is submitted</b><small>How many items are short or over, and their value</small></span></label>
+          <label class="al-opt"><input class="form-check-input" type="checkbox" id="alertsOnDelivery"><span><b>A delivery is recorded</b><small>What arrived, what you owe, and any cost increase that leaves too little profit</small></span></label>
+          <label class="al-opt"><input class="form-check-input" type="checkbox" id="alertsOnAudit"><span><b>A discount, price change, refund or deletion</b><small>Who did it, what it was, and the reason they gave</small></span></label>
           <label class="al-opt"><input class="form-check-input" type="checkbox" id="alertsOnSmart"><span><b>Smart warnings</b><small>Stock about to run out, sales running behind last week, or a day that was never closed</small></span></label>
         </div>
 
@@ -2156,6 +2409,172 @@
 </div>
 
 <!-- Categories (bulk) -->
+<!-- ================= ATTENDANCE: WORK LOCATION ================= -->
+<div class="modal fade" id="workplaceModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><span class="m-ico"><i class="fas fa-location-dot"></i></span>Work location</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <label class="al-opt mb-3">
+          <input class="form-check-input" type="checkbox" id="wpEnabled" onchange="window.wpToggle(this.checked)">
+          <span><b>Staff must be at the workplace to clock in</b><small>Switch off to let everyone clock in from anywhere.</small></span>
+        </label>
+
+        <div id="wpBody">
+          <h6 class="fw-bold mb-1">Places staff can clock in from</h6>
+          <div class="small text-muted mb-2">Tick the places that count. Staff can clock in at any ticked place; untick one to switch it off without deleting it.</div>
+          <div id="wpList" class="wp-list mb-2"></div>
+          <div class="d-flex align-items-center gap-2 flex-wrap mb-4">
+            <button type="button" class="btn btn-soft btn-sm" onclick="window.wpTestDistance()"><i class="fas fa-ruler me-1"></i>How far am I from these?</button>
+            <div id="wpTest" class="small"></div>
+          </div>
+
+          <div class="wp-add">
+            <h6 class="fw-bold mb-2">Add a place</h6>
+            <div class="row g-2">
+              <div class="col-md-8">
+                <label class="form-label" for="wpName">Name <span class="text-muted fw-normal">(optional)</span></label>
+                <input id="wpName" class="form-control" placeholder="e.g. Madollar Pub, Second shop" autocomplete="off">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label" for="wpRadius">Allowed distance</label>
+                <select id="wpRadius" class="form-select"></select>
+              </div>
+              <div class="col-12">
+                <label class="form-label" for="wpPaste">Pin from Google Maps</label>
+                <textarea id="wpPaste" class="form-control" rows="2" placeholder="Paste the link or the numbers here, e.g. -1.533134, 37.131476" autocomplete="off"></textarea>
+                <div id="wpParsed" class="small mt-1"></div>
+              </div>
+              <div class="col-12 d-flex gap-2 flex-wrap">
+                <button type="button" class="btn btn-soft" onclick="window.wpUseMyLocation()"><i class="fas fa-crosshairs me-1"></i>Use my current location</button>
+                <button type="button" class="btn btn-custom" onclick="window.wpAdd()"><i class="fas fa-plus me-1"></i>Add this place</button>
+              </div>
+            </div>
+
+            <details class="wp-help mt-3">
+              <summary><i class="fas fa-circle-question me-1"></i>How do I get the pin from Google Maps?</summary>
+              <ol>
+                <li><b>On a phone:</b> open Google Maps, press and hold on the exact spot until a red pin appears, then tap the numbers at the top (or the pin name at the bottom, then Share, then Copy link). Paste it above.</li>
+                <li><b>On a computer:</b> open Google Maps, right-click the spot and click the numbers at the top of the menu. They are copied. Paste them above.</li>
+                <li><b>Easiest:</b> stand at the workplace and press <b>Use my current location</b>.</li>
+                <li>Short links like maps.app.goo.gl cannot be read here. Open the link in Google Maps first, then copy the numbers or the long link from the address bar.</li>
+                <li>Press <b>Check it on the map</b> after pasting to make sure the pin is on the right building.</li>
+              </ol>
+            </details>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-soft" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-custom" onclick="window.saveWorkplace()"><i class="fas fa-check me-1"></i>Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= TILL: CHANGE PRICE ================= -->
+<div class="modal fade" id="priceModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><span class="m-ico"><i class="fas fa-tag"></i></span>Change the price</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="pc-product" id="pcProduct"></div>
+        <div class="small text-muted mb-3">Listed price: <b id="pcList"></b> each</div>
+        <label class="form-label" for="pcNew">Price for one unit (KSh)</label>
+        <input id="pcNew" type="number" min="0" step="any" class="form-control mb-2" oninput="window.updatePricePreview()">
+        <div id="pcHint" class="small mb-3"></div>
+        <label class="form-label" for="pcReason">Why? <span class="text-muted fw-normal">(recorded with your name)</span></label>
+        <select id="pcReason" class="form-select" onchange="window.onReasonChange('pcReason','pcReasonOther')"></select>
+        <input id="pcReasonOther" class="form-control mt-2 d-none" placeholder="Type the reason" autocomplete="off">
+      </div>
+      <div class="modal-footer">
+        <button type="button" id="pcResetBtn" class="btn btn-soft me-auto d-none" onclick="window.resetPriceChange()"><i class="fas fa-rotate-left me-1"></i>Back to listed price</button>
+        <button type="button" class="btn btn-soft" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-custom" onclick="window.savePriceChange()"><i class="fas fa-check me-1"></i>Use this price</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= TILL: DISCOUNT ================= -->
+<div class="modal fade" id="discountModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><span class="m-ico"><i class="fas fa-percent"></i></span>Give a discount</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="small text-muted mb-3">Cart total before the discount: <b id="dcSubtotal"></b></div>
+        <div class="btn-group w-100 mb-3" role="group">
+          <button type="button" id="dcKindPercent" class="btn btn-soft" onclick="window.setDiscountKind('percent')">Percentage (%)</button>
+          <button type="button" id="dcKindAmount" class="btn btn-soft" onclick="window.setDiscountKind('amount')">Amount (KSh)</button>
+        </div>
+        <label class="form-label" for="dcValue">How much to take off</label>
+        <div class="input-group mb-2">
+          <input id="dcValue" type="number" min="0" step="any" class="form-control" oninput="window.updateDiscountPreview()">
+          <span class="input-group-text" id="dcUnit">%</span>
+        </div>
+        <div id="dcPreview" class="dc-preview small mb-3"></div>
+        <label class="form-label" for="dcReason">Why? <span class="text-muted fw-normal">(recorded with your name)</span></label>
+        <select id="dcReason" class="form-select" onchange="window.onReasonChange('dcReason','dcReasonOther')"></select>
+        <input id="dcReasonOther" class="form-control mt-2 d-none" placeholder="Type the reason" autocomplete="off">
+      </div>
+      <div class="modal-footer">
+        <button type="button" id="dcRemoveBtn" class="btn btn-soft me-auto d-none" onclick="window.removeDiscount()"><i class="fas fa-xmark me-1"></i>Remove discount</button>
+        <button type="button" class="btn btn-soft" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-custom" onclick="window.saveDiscount()"><i class="fas fa-check me-1"></i>Apply discount</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= SALES: REFUND ================= -->
+<div class="modal fade" id="refundModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><span class="m-ico"><i class="fas fa-rotate-left"></i></span>Refund items</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div id="rfSummary" class="small text-muted mb-3"></div>
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <label class="form-label mb-0">What is being taken back?</label>
+          <button type="button" class="btn btn-soft btn-sm" onclick="window.refundEverything()">Refund everything</button>
+        </div>
+        <div id="rfLines" class="rf-lines mb-3"></div>
+
+        <div id="rfMethodWrap" class="mb-3">
+          <label class="form-label" for="rfMethod">Money is paid back by</label>
+          <select id="rfMethod" class="form-select">
+            <option value="Cash">Cash</option>
+            <option value="M-PESA">M-PESA</option>
+            <option value="Card">Card</option>
+            <option value="Bank Transfer">Bank Transfer</option>
+          </select>
+        </div>
+        <div id="rfCreditNote" class="alert-soft mb-3 d-none"><i class="fas fa-book me-2"></i>This sale was put on the customer's tab, so the refund comes off what they owe.</div>
+
+        <label class="form-label" for="rfReason">Why? <span class="text-muted fw-normal">(recorded with your name)</span></label>
+        <select id="rfReason" class="form-select" onchange="window.onReasonChange('rfReason','rfReasonOther')"></select>
+        <input id="rfReasonOther" class="form-control mt-2 d-none" placeholder="Type the reason" autocomplete="off">
+      </div>
+      <div class="modal-footer">
+        <div class="me-auto"><div class="small text-muted">Refund total</div><div class="fw-bold fs-5" id="rfTotal">KSh 0.00</div></div>
+        <button type="button" class="btn btn-soft" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" id="rfSaveBtn" class="btn btn-custom" disabled onclick="window.saveRefund()"><i class="fas fa-check me-1"></i>Refund</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal fade" id="categoriesModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
     <div class="modal-content">
@@ -2185,6 +2604,240 @@
       <div class="modal-footer">
         <button type="button" class="btn btn-soft" data-bs-dismiss="modal">Cancel</button>
         <button type="button" class="btn btn-custom" onclick="window.saveCategories()"><i class="fas fa-check me-1"></i>Save categories</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Supplier -->
+<div class="modal fade" id="supplierModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><span class="m-ico"><i class="fas fa-truck"></i></span><span id="supModalTitle">Add Supplier</span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label" for="supName">Supplier name</label>
+          <input id="supName" class="form-control" placeholder="e.g. Kenya Wines Agencies" autocomplete="off">
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="supPhone">Phone number <span class="text-muted fw-normal">(optional)</span></label>
+          <input id="supPhone" type="tel" class="form-control" placeholder="07XX XXX XXX">
+        </div>
+        <div>
+          <label class="form-label" for="supNotes">Notes <span class="text-muted fw-normal">(optional)</span></label>
+          <input id="supNotes" class="form-control" placeholder="e.g. Delivers on Tuesdays">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-soft" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-custom" onclick="window.saveSupplier()"><i class="fas fa-check me-1"></i>Save supplier</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Receive a delivery -->
+<div class="modal fade" id="deliveryModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable modal-fullscreen-md-down">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><span class="m-ico"><i class="fas fa-truck-ramp-box"></i></span>Receive Delivery</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-3 mb-3">
+          <div class="col-md-5">
+            <label class="form-label" for="dvSupplier">Supplier</label>
+            <select id="dvSupplier" class="form-select"></select>
+          </div>
+          <div class="col-6 col-md-3">
+            <label class="form-label" for="dvDate">Date</label>
+            <input id="dvDate" type="date" class="form-control">
+          </div>
+          <div class="col-6 col-md-4">
+            <label class="form-label" for="dvInvoice">Invoice no. <span class="text-muted fw-normal">(optional)</span></label>
+            <input id="dvInvoice" class="form-control" placeholder="e.g. INV-2041" autocomplete="off">
+          </div>
+        </div>
+
+        <label class="form-label" for="dvProductSearch">Add products</label>
+        <div class="input-group mb-3">
+          <input id="dvProductSearch" class="form-control" list="dvProductList" placeholder="Type a product name, or scan it" autocomplete="off">
+          <datalist id="dvProductList"></datalist>
+          <button class="btn btn-soft" type="button" onclick="window.addDeliveryLineFromSearch()"><i class="fas fa-plus me-1"></i>Add</button>
+          <button class="btn btn-soft" type="button" onclick="window.scanForDelivery()" title="Scan with the camera"><i class="fas fa-barcode"></i></button>
+        </div>
+
+        <div class="table-wrap mb-3">
+          <div class="table-responsive">
+            <table class="table table-sm align-middle table-compact mb-0">
+              <thead><tr><th>Product</th><th class="text-end">Qty</th><th class="text-end">Cost each</th><th class="text-end">Total</th><th></th></tr></thead>
+              <tbody id="dvLines"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="dv-summary">
+          <div><span>Delivery total</span><b id="dvTotal">KSh 0.00</b><small id="dvLineCount">0 products</small></div>
+          <div>
+            <label class="form-label mb-1" for="dvPaid">Paid now (KSh)</label>
+            <div class="input-group">
+              <input id="dvPaid" type="number" min="0" step="any" class="form-control" placeholder="0">
+              <button class="btn btn-soft" type="button" onclick="window.payDeliveryInFull()">Pay in full</button>
+            </div>
+          </div>
+          <div>
+            <label class="form-label mb-1" for="dvMethod">Paid by</label>
+            <select id="dvMethod" class="form-select"><option>Cash</option><option>M-PESA</option><option>Bank Transfer</option><option>Card</option></select>
+          </div>
+          <div class="dv-owing"><span>You will owe</span><b id="dvOwing">KSh 0.00</b></div>
+        </div>
+
+        <div class="mt-3">
+          <label class="form-label" for="dvNotes">Notes <span class="text-muted fw-normal">(optional)</span></label>
+          <input id="dvNotes" class="form-control" placeholder="e.g. Two crates damaged, credit promised">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-soft" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-custom" onclick="window.saveDelivery()"><i class="fas fa-check me-1"></i>Save delivery</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Pay a supplier -->
+<div class="modal fade" id="supplierPayModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><span class="m-ico ic-green"><i class="fas fa-hand-holding-dollar"></i></span>Pay Supplier</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="d-flex justify-content-between align-items-center p-3 mb-3 rounded-3" style="background:var(--surface-2);border:1px solid var(--line)">
+          <div><div class="small text-muted">Supplier</div><div id="spName" class="fw-bold">-</div></div>
+          <div class="text-end"><div class="small text-muted">You owe</div><div id="spBalance" class="fw-bold fs-5 text-danger">KSh 0.00</div></div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="spAmount">Amount paid (KSh)</label>
+          <div class="input-group">
+            <input id="spAmount" type="number" step="any" min="0" class="form-control form-control-lg" placeholder="0.00">
+            <button class="btn btn-soft" type="button" onclick="window.fillSupplierPaymentFull()">Full balance</button>
+          </div>
+        </div>
+        <div class="row g-3">
+          <div class="col-md-5">
+            <label class="form-label" for="spMethod">Paid by</label>
+            <select id="spMethod" class="form-select"><option>Cash</option><option>M-PESA</option><option>Bank Transfer</option><option>Card</option></select>
+          </div>
+          <div class="col-md-7">
+            <label class="form-label" for="spNote">Note <span class="text-muted fw-normal">(optional)</span></label>
+            <input id="spNote" class="form-control" placeholder="e.g. Part payment, ref QX123">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-soft" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-custom" onclick="window.saveSupplierPayment()"><i class="fas fa-check me-1"></i>Save payment</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Supplier statement -->
+<div class="modal fade" id="supplierStatementModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><span class="m-ico"><i class="fas fa-file-lines"></i></span>Supplier Statement</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="d-flex justify-content-between align-items-center p-3 mb-3 rounded-3" style="background:var(--surface-2);border:1px solid var(--line)">
+          <div id="ssName" class="fw-bold">-</div>
+          <div class="text-end"><div class="small text-muted">You owe</div><div id="ssBalance" class="fw-bold fs-5">KSh 0.00</div></div>
+        </div>
+        <div class="table-wrap">
+          <div class="table-responsive">
+            <table class="table table-sm align-middle table-compact mb-0">
+              <thead><tr><th>Date</th><th>Details</th><th class="text-end">Delivered</th><th class="text-end">Paid</th></tr></thead>
+              <tbody id="ssBody"></tbody>
+              <tfoot id="ssTotals"></tfoot>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-soft" onclick="window.downloadSupplierStatement()"><i class="fas fa-file-pdf me-1 text-danger"></i>Download PDF</button>
+        <button type="button" class="btn btn-custom" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Debt reminders -->
+<div class="modal fade" id="remindersModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable modal-fullscreen-sm-down">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><span class="m-ico"><i class="fas fa-bell"></i></span>Debt Reminders</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <label class="form-label" for="rmTemplate">Message <span class="text-muted fw-normal">(<code>{name}</code> and <code>{balance}</code> are filled in for each customer)</span></label>
+        <textarea id="rmTemplate" class="form-control mb-2" rows="3"></textarea>
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+          <small class="text-muted">Tapping WhatsApp or SMS opens that app with the message ready. You press send there.</small>
+          <button type="button" id="rmSaveDefaultBtn" class="btn btn-soft btn-sm d-none" onclick="window.saveReminderTemplate()"><i class="fas fa-floppy-disk me-1"></i>Save as standard message</button>
+        </div>
+        <div id="rmSummary" class="rm-summary mb-2"></div>
+        <div id="rmList"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-custom" data-bs-dismiss="modal">Done</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Barcode scanner -->
+<div class="modal fade" id="scannerModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+  <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><span class="m-ico"><i class="fas fa-barcode"></i></span><span id="scanTitle">Scan a barcode</span></h5>
+        <button type="button" class="btn-close" onclick="window.closeScanner()" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="scan-view">
+          <video id="scanVideo" playsinline muted></video>
+          <div class="scan-frame"><span class="scan-line"></span></div>
+        </div>
+        <div id="scanStatus" class="scan-status">Starting the camera...</div>
+
+        <div id="scanUnknown" class="scan-unknown d-none">
+          <div class="fw-semibold mb-1"><i class="fas fa-circle-question text-warning me-1"></i>New barcode <span id="scanUnknownCode" class="font-monospace"></span></div>
+          <div id="scanUnknownNote" class="small text-muted d-none">Ask an admin to link this barcode to a product.</div>
+          <div id="scanUnknownSave" class="input-group">
+            <input id="scanUnknownProduct" class="form-control" list="scanUnknownList" placeholder="Which product is this?" autocomplete="off">
+            <datalist id="scanUnknownList"></datalist>
+            <button class="btn btn-custom" type="button" onclick="window.linkUnknownBarcode()">Link &amp; add</button>
+          </div>
+        </div>
+
+        <div id="scanLog" class="scan-log"></div>
+
+        <div class="input-group mt-3">
+          <input id="scanManual" class="form-control" inputmode="numeric" placeholder="Or type the barcode here, or scan with a barcode reader" autocomplete="off">
+          <button class="btn btn-soft" type="button" onclick="window.submitManualScan()">Add</button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-custom" onclick="window.closeScanner()"><i class="fas fa-check me-1"></i>Done</button>
       </div>
     </div>
   </div>
@@ -2442,7 +3095,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
 
-<script src="main.js?v=20261061"></script>
+<script src="main.js?v=20261077"></script>
 <script>
   // If a stale cached main.js was loaded (new buttons need its functions), reload once bypassing the cache
   if (typeof window.openAddProductModal !== 'function') {

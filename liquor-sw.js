@@ -15,6 +15,7 @@ const SHELL = ["./liquor.html", "./img/logo.jpeg", "./img/liquor-192.png"];
 
 const NEVER_CACHE_HOSTS = [
     "firestore.googleapis.com",
+    "world.openfoodfacts.org",
     "firebaseinstallations.googleapis.com",
     "identitytoolkit.googleapis.com",
     "securetoken.googleapis.com",
